@@ -109,7 +109,9 @@ The **Logs** toolbar button opens the selected device's log at the bottom of the
 - **Apps:** the target button shows only the app in the foreground (`dumpsys` on Android, the accessibility root through Baguette on simulators). The Apps button opens a bounded, alphabetical picker with your own apps first and everything seen in the log below; Android apps include their other processes. Right-click a line to show or hide its app.
 - **Per device:** each device remembers its own filter, also across launches.
 - **Columns:** drag a header to reorder, drag its right edge to resize, right-click the header to hide columns (including PID, hidden by default), pick a shorter time format or reset.
-- Pause keeps collecting without scrolling, Follow sticks to the newest line, Copy puts the visible lines on the clipboard. The last 50,000 lines are kept.
+- **Following:** at the end of the list new lines keep it there; scroll up and the view stays exactly where you are. The arrow button jumps back and follows again.
+- **Selecting and copying:** click a line, Shift-click to extend, Command-click to toggle, Command-A for all. Cmd+C or the context menu copies the selected lines with line breaks; *Copy Messages* copies only the messages, also one per line. The copy button in the header copies everything visible.
+- Pause keeps collecting without scrolling. The buffer holds 50,000 lines by default; Settings → Logs changes it (5,000 to 500,000).
 
 ### Keyboard, clipboard and drag & drop
 

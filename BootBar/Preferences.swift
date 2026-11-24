@@ -8,11 +8,12 @@ nonisolated enum Preferences {
     static let captureDirectoryKey = "captureDirectory"
     static let showPhysicalDevicesKey = "showPhysicalDevices"
     static let syncClipboardKey = "syncClipboard"
+    static let logBufferKey = "logBufferLines"
     static let terminalAppKey = "terminalApp"
     static let terminalCustomAppKey = "terminalCustomApp"
 
     static func registerDefaults() {
-        UserDefaults.standard.register(defaults: [showPhysicalDevicesKey: true, syncClipboardKey: true])
+        UserDefaults.standard.register(defaults: [showPhysicalDevicesKey: true, syncClipboardKey: true, logBufferKey: 50_000])
     }
 
     static var showPhysicalDevices: Bool { UserDefaults.standard.bool(forKey: showPhysicalDevicesKey) }

@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage(Preferences.terminalCustomAppKey) private var terminalCustomName = ""
     @AppStorage(Preferences.showPhysicalDevicesKey) private var showPhysicalDevices = true
     @AppStorage(Preferences.syncClipboardKey) private var syncClipboard = true
+    @AppStorage(Preferences.logBufferKey) private var logBuffer = 50_000
     @State private var launchModel = LaunchAtLoginModel()
     @State private var linkHandler = LinkHandlerModel()
 
@@ -81,6 +82,18 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            }
+            tab("Logs", "text.alignleft") {
+                Section("Log panel") {
+                    Picker("Lines kept per device", selection: $logBuffer) {
+                        ForEach([5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000], id: \.self) {
+                            Text($0.formatted()).tag($0)
+                        }
+                    }
+                    Text("The oldest lines are dropped once the log is full. A larger buffer keeps more history and uses more memory (roughly 200 bytes a line); a simulator can produce well over a thousand lines a second.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             tab("Mirror", "rectangle.on.rectangle") {
             Section("Mirror") {

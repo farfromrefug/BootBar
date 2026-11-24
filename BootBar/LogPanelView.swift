@@ -16,9 +16,15 @@ struct LogPanelView: View {
 
     @AppStorage("logColumnLayout") private var layoutJSON = ""
     @State private var showApps = false
-    @State private var following = true
+    /// Following the newest line. Scrolling up with the trackpad or wheel turns it off, reaching the end turns it on.
+    @State private var isAtBottom = true
+    @State private var endIsVisible = true
+    @State private var scrollPhase: ScrollPhase = .idle
+    @State private var followTask: Task<Void, Never>?
     @State private var selection: Set<Int> = []
-    @State private var scrollTask: Task<Void, Never>?
+    @State private var selectionAnchor: Int?
+    @State private var scrollRequest = 0
+    @FocusState private var listFocused: Bool
 
     var body: some View {
         @Bindable var model = model
@@ -44,9 +50,9 @@ struct LogPanelView: View {
             headerButton(model.isPaused ? "play.fill" : "pause.fill", model.isPaused ? "Resume" : "Pause") {
                 model.isPaused.toggle()
             }
-            headerButton("arrow.down.to.line", following ? "Stop following the newest line" : "Follow the newest line",
-                         tint: following ? .accentColor : .secondary) { following.toggle() }
-            headerButton("doc.on.doc", "Copy the visible lines") { copy(model.text()) }
+            headerButton("arrow.down.to.line", isAtBottom ? "Following the newest line" : "Jump to the newest line and follow",
+                         tint: isAtBottom ? .accentColor : .secondary) { scrollRequest += 1 }
+            copyMenu
             headerButton("trash", "Clear") { model.clear() }
             Divider().frame(height: 14)
             headerButton(isFull ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
@@ -257,27 +263,59 @@ struct LogPanelView: View {
             .frame(maxWidth: .infinity)
         } else {
             ScrollViewReader { proxy in
-                List(model.visible, selection: $selection) { entry in
-                    LogRow(entry: entry, layout: layout)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
-                        .listRowSeparator(.hidden)
-                        .contextMenu { contextMenu(for: entry) }
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(model.visible) { entry in
+                            LogRow(entry: entry, layout: layout, isSelected: selection.contains(entry.id))
+                                .id(entry.id)
+                                .contentShape(Rectangle())
+                                .onTapGesture { select(entry) }
+                                .contextMenu { contextMenu(for: entry) }
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
-                .listStyle(.plain)
-                .environment(\.defaultMinListRowHeight, 16)
+                // the native anchor keeps the end in view as lines arrive; scrolling up releases it and the view stays put
+                .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .defaultScrollAnchor(.bottom, for: .sizeChanges)
+                .onScrollPhaseChange { _, phase in scrollPhase = phase }
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 24
+                } action: { _, atEnd in
+                    endIsVisible = atEnd
+                    // only the user's own scrolling changes following: growing content briefly looks like "not at the end"
+                    if scrollPhase == .interacting || scrollPhase == .decelerating { isAtBottom = atEnd }
+                }
                 .onChange(of: model.visible.last?.id) { _, last in
-                    guard following, let last else { return }
-                    scrollTask?.cancel()
-                    // lines can arrive faster than they can be drawn, so scroll once per pause
-                    scrollTask = Task {
-                        try? await Task.sleep(for: .milliseconds(80))
+                    guard isAtBottom, let last else { return }
+                    followTask?.cancel()
+                    // lines can arrive faster than they are drawn, so scroll once per pause
+                    followTask = Task {
+                        try? await Task.sleep(for: .milliseconds(60))
                         guard !Task.isCancelled else { return }
                         proxy.scrollTo(last, anchor: .bottom)
                     }
                 }
+                .onChange(of: scrollRequest) { _, _ in
+                    isAtBottom = true
+                    if let last = model.visible.last?.id { proxy.scrollTo(last, anchor: .bottom) }
+                }
+                .focusable()
+                .focused($listFocused)
+                .focusEffectDisabled()
+                .onKeyPress(characters: CharacterSet(charactersIn: "a"), phases: .down) { press in
+                    guard press.modifiers.contains(.command) else { return .ignored }
+                    selection = Set(model.visible.map(\.id))
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    guard !selection.isEmpty else { return .ignored }
+                    selection = []
+                    return .handled
+                }
                 .onCopyCommand {
-                    let lines = model.visible.filter { selection.contains($0.id) }.map(\.line).joined(separator: "\n")
-                    return lines.isEmpty ? [] : [NSItemProvider(object: lines as NSString)]
+                    let text = model.text(of: selectedEntries)
+                    return text.isEmpty ? [] : [NSItemProvider(object: text as NSString)]
                 }
             }
         }
@@ -288,10 +326,57 @@ struct LogPanelView: View {
         return model.state == .streaming ? "Waiting for log lines…" : ""
     }
 
+    // MARK: Selection and copying
+
+    private var selectedEntries: [LogEntry] {
+        model.visible.filter { selection.contains($0.id) }
+    }
+
+    /// Click selects a line, Shift-click extends from the last click and Command-click toggles one.
+    private func select(_ entry: LogEntry) {
+        listFocused = true
+        let flags = NSApp.currentEvent?.modifierFlags ?? []
+        if flags.contains(.shift), let anchor = selectionAnchor,
+           let from = model.visible.firstIndex(where: { $0.id == anchor }),
+           let to = model.visible.firstIndex(where: { $0.id == entry.id }) {
+            selection = Set(model.visible[min(from, to)...max(from, to)].map(\.id))
+        } else if flags.contains(.command) {
+            if selection.contains(entry.id) { selection.remove(entry.id) } else { selection.insert(entry.id) }
+            selectionAnchor = entry.id
+        } else {
+            selection = [entry.id]
+            selectionAnchor = entry.id
+        }
+    }
+
+    /// The lines an action applies to: the selection when the clicked line is part of it, else just that line.
+    private func targets(for entry: LogEntry) -> [LogEntry] {
+        selection.contains(entry.id) ? selectedEntries : [entry]
+    }
+
+    private var copyMenu: some View {
+        Menu {
+            if !selection.isEmpty {
+                Button("Copy Selected Lines (\(selection.count))") { copy(model.text(of: selectedEntries)) }
+                Button("Copy Selected Messages") { copy(model.messages(of: selectedEntries)) }
+                Divider()
+            }
+            Button("Copy All Visible Lines") { copy(model.text()) }
+            Button("Copy All Visible Messages") { copy(model.messages()) }
+        } label: {
+            Image(systemName: "doc.on.doc").foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Copy")
+    }
+
     @ViewBuilder
     private func contextMenu(for entry: LogEntry) -> some View {
-        Button("Copy Line") { copy(entry.line) }
-        Button("Copy Message") { copy(entry.message) }
+        let rows = targets(for: entry)
+        Button(rows.count > 1 ? "Copy \(rows.count) Lines" : "Copy Line") { copy(model.text(of: rows)) }
+        Button(rows.count > 1 ? "Copy \(rows.count) Messages" : "Copy Message") { copy(model.messages(of: rows)) }
         Divider()
         Button("Show Only \(entry.appName)") { model.filter.apps = [entry.appName] }
         Button("Hide \(entry.appName)") {
@@ -308,6 +393,7 @@ struct LogPanelView: View {
 private struct LogRow: View {
     let entry: LogEntry
     let layout: LogColumnLayout
+    var isSelected = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -316,7 +402,10 @@ private struct LogRow: View {
             }
         }
         .font(.system(size: 10.5, design: .monospaced))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? Color.accentColor.opacity(0.28) : Color.clear)
     }
 
     @ViewBuilder

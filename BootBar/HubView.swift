@@ -12,6 +12,7 @@ struct HubView: View {
     @AppStorage("hubShowsInspector") private var showInspector = true
     @AppStorage("hubLogMode") private var logModeRaw = LogPanelMode.hidden.rawValue
     @AppStorage("hubLogHeight") private var logHeight = 280.0
+    @AppStorage(Preferences.logBufferKey) private var logBuffer = 50_000
     @State private var logs = LogViewModel(defaults: .standard) { Preferences.locateSDK() }
     @State private var dropTargeted = false
     @State private var window: NSWindow?
@@ -73,6 +74,7 @@ struct HubView: View {
             }
         }
         .onChange(of: router.selection) { _, _ in creating = nil }
+        .onChange(of: logBuffer, initial: true) { _, lines in logs.capacity = lines }
         .background(WindowReader { window = $0 })
         // the app is a menu bar agent; while this window is open it also gets a Dock icon
         .onAppear {
