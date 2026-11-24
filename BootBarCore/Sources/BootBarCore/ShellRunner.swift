@@ -225,6 +225,7 @@ public struct ProcessByteStreamer: ByteStreaming {
                 }
                 handle.readabilityHandler = nil
                 process.waitUntilExit()
+                ChildProcesses.shared.untrack(process)
                 if process.terminationStatus == 0 || process.terminationReason == .uncaughtSignal {
                     continuation.finish()
                 } else {
@@ -236,9 +237,11 @@ public struct ProcessByteStreamer: ByteStreaming {
             continuation.onTermination = { _ in
                 stdout.fileHandleForReading.readabilityHandler = nil
                 if process.isRunning { process.terminate() }
+                ChildProcesses.shared.untrack(process)
             }
             do {
                 try process.run()
+                ChildProcesses.shared.track(process)
             } catch {
                 continuation.finish(throwing: error)
             }

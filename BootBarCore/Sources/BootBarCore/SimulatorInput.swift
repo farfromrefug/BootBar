@@ -69,6 +69,7 @@ public final class SimulatorInputSession: @unchecked Sendable {
             if handle.availableData.isEmpty { handle.readabilityHandler = nil }
         }
         try process.run()
+        ChildProcesses.shared.track(process)
         lock.withLock {
             self.process = process
             input = stdin.fileHandleForWriting
@@ -79,6 +80,7 @@ public final class SimulatorInputSession: @unchecked Sendable {
         let (process, input) = lock.withLock { (self.process, self.input) }
         try? input?.close()
         if let process, process.isRunning { process.terminate() }
+        if let process { ChildProcesses.shared.untrack(process) }
         lock.withLock {
             self.process = nil
             self.input = nil

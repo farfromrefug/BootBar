@@ -36,9 +36,33 @@ final class InstallRequestCenter {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// The camera is injected into the simulator's launchd environment, so leaving it armed would outlive the app.
+    private var signalSources: [DispatchSourceSignal] = []
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // helpers a killed or crashed earlier run left behind (log streams, mirrors) would keep running for ever
+        ChildProcesses.shared.reapOrphans()
+        // a plain `kill` or a stopped debug session would otherwise skip applicationWillTerminate
+        for signalNumber in [SIGTERM, SIGINT, SIGHUP] {
+            signal(signalNumber, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
+            source.setEventHandler {
+                Self.cleanUp()
+                exit(0)
+            }
+            source.resume()
+            signalSources.append(source)
+        }
+    }
+
+    /// The camera is injected into the simulator's launchd environment, and the helpers are separate processes:
+    /// neither may outlive the app.
     func applicationWillTerminate(_ notification: Notification) {
+        Self.cleanUp()
+    }
+
+    private static func cleanUp() {
         VirtualCameraViewModel.disarmForQuit()
+        ChildProcesses.shared.terminateAll()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
