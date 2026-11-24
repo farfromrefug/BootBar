@@ -514,3 +514,42 @@ private func trustSetup(_ runner: MockShellRunner) throws -> (DeviceProxySetup, 
     runner.responses["/sdk/platform-tools/adb -s emulator-5554 shell getprop ro.build.version.sdk"] = .failure(ShellError(command: "adb", exitCode: 1, stderr: "offline"))
     #expect(await setup.androidTrust(on: device) == nil)
 }
+
+@Test func theInjectionScriptBindsTheCertificateWhereAppsReadIt() throws {
+    let script = DeviceProxySetup.injectionScript(hash: "abcd1234", remote: "/data/local/tmp/abcd1234.0")
+    #expect(script.contains("cp /data/local/tmp/abcd1234.0 $STORE/abcd1234.0"))
+    // new apps inherit the zygote's mounts, running apps need their own
+    #expect(script.contains("nsenter --mount=/proc/$Z/ns/mnt") && script.contains("nsenter --mount=/proc/$P/ns/mnt"))
+    #expect(script.contains("test -f $APEX/abcd1234.0"))
+    #expect(script.hasSuffix("echo \(DeviceProxySetup.certificateMarker)"))
+    if let path = ProcessInfo.processInfo.environment["BOOTBAR_DUMP_SCRIPT"] { try script.write(toFile: path, atomically: true, encoding: .utf8) }
+}
+
+@Test func androidTrustIgnoresASystemStoreThatAppsDoNotSee() async throws {
+    let runner = MockShellRunner()
+    let (setup, authority, device) = try trustSetup(runner)
+    let pem = try #require(FileManager.default.contents(atPath: authority.certificatePath))
+    let digest = SHA256.hash(data: pem).map { String(format: "%02x", $0) }.joined()
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
+    process.arguments = ["x509", "-inform", "PEM", "-subject_hash_old", "-noout", "-in", authority.certificatePath]
+    let out = Pipe(); process.standardOutput = out
+    try process.run(); process.waitUntilExit()
+    let name = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    let adb = "/sdk/platform-tools/adb -s emulator-5554 shell "
+    runner.responses[adb + "getprop ro.build.version.sdk"] = .success("36")
+    runner.responses[adb + "sha256sum /system/etc/security/cacerts/\(name).0"] = .success("\(digest)  x")
+    // Android 14 and later read the APEX copy, which does not have it
+    runner.responses[adb + "[ -d /apex/com.android.conscrypt/cacerts ] && [ ! -f /apex/com.android.conscrypt/cacerts/\(name).0 ] && echo MISSING"] = .success("MISSING\n")
+    runner.responses[adb + "getprop ro.debuggable"] = .success("1\n")
+    #expect(await setup.androidTrust(on: device) == .rootable)
+}
+
+@Test func theBundledHelperVersionMatchesItsGradleVersionCode() throws {
+    let gradle = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("BootBarHelper/app/build.gradle.kts")
+    let text = try String(contentsOf: gradle, encoding: .utf8)
+    let line = try #require(text.split(separator: "\n").first { $0.contains("versionCode") })
+    #expect(line.contains("= \(DeviceProxySetup.helperVersion)"))
+}

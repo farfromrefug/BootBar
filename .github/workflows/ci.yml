@@ -20,3 +20,19 @@ jobs:
         run: swift test --package-path BootBarCore
       - name: Build app
         run: xcodebuild -project BootBar.xcodeproj -scheme BootBar -destination 'platform=macOS,arch=arm64' build
+
+  helper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build the Android helper
+        run: |
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          echo "sdk.dir=$sdk" > BootBarHelper/local.properties
+          yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$sdk/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" > /dev/null
+          BootBarHelper/build.sh

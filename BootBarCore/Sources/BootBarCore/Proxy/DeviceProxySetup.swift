@@ -118,8 +118,9 @@ public struct DeviceProxySetup: Sendable {
     private func installAndroidCertificate(_ device: Device) async throws -> String? {
         let hash = try await subjectHash()
         let remote = "/data/local/tmp/\(hash).0"
-        // a rootable image (an emulator without Play Store) can trust the certificate for every app
-        if let rooted = try? await installAsSystemCertificate(device, hash: hash, remote: remote), rooted { return nil }
+        // a rootable image (an emulator without Play Store) can trust the certificate for every app;
+        // when it is rootable but the install fails, that is an error to show, not a reason to fall back
+        if try await installAsSystemCertificate(device, hash: hash, remote: remote) { return nil }
 
         _ = try await adb(device, ["push", authority.certificatePath, "/sdcard/Download/BootBar-CA.crt"])
         _ = try? await adb(device, ["shell", "am", "start", "-a", "android.settings.SECURITY_SETTINGS"])
@@ -134,7 +135,9 @@ public struct DeviceProxySetup: Sendable {
               (try? await adb(device, ["shell", "getprop", "ro.build.version.sdk"])) != nil else { return nil }
         let local = SHA256.hash(data: pem).map { String(format: "%02x", $0) }.joined()
         let installed = (try? await adb(device, ["shell", "sha256sum", "/system/etc/security/cacerts/\(hash).0"])) ?? ""
-        if installed.contains(local) { return .system }
+        // Android 14 and later read the APEX copy: a system store that apps do not see does not count
+        let missing = (try? await adb(device, ["shell", "[ -d /apex/com.android.conscrypt/cacerts ] && [ ! -f /apex/com.android.conscrypt/cacerts/\(hash).0 ] && echo MISSING"])) ?? ""
+        if installed.contains(local), !missing.contains("MISSING") { return .system }
         let debuggable = (try? await adb(device, ["shell", "getprop", "ro.debuggable"])) ?? ""
         return debuggable.trimmingCharacters(in: .whitespacesAndNewlines) == "1" ? .rootable : .locked
     }
@@ -154,32 +157,64 @@ public struct DeviceProxySetup: Sendable {
         return hash
     }
 
+    static let certificateMarker = "BOOTBAR_CERT_OK"
+
     /// Trusts the certificate system-wide by overlaying the CA directories with a copy that includes it
     /// (the approach HTTP Toolkit uses). Needs `adb root`; the overlay lasts until the device restarts.
+    /// Returns false when the device cannot be rooted. The certificate must then be visible to apps: on Android 14
+    /// and later they read the APEX copy, which is bound into the zygotes (new apps) and the running apps.
     private func installAsSystemCertificate(_ device: Device, hash: String, remote: String) async throws -> Bool {
         guard let sdk, let serial = device.serial else { return false }
         let rootResult = (try? await runner.run(sdk.adbPath, ["-s", serial, "root"])) ?? ""
         guard !rootResult.contains("cannot run as root") else { return false }
-        try await Task.sleep(for: .seconds(1))   // adbd restarts as root
+        try await waitForRoot(device)
         _ = try await adb(device, ["push", authority.certificatePath, remote])
-        let script = """
-        set -e
-        mkdir -p -m 700 /data/local/tmp/bb-ca
-        cp /system/etc/security/cacerts/* /data/local/tmp/bb-ca/
-        mount -t tmpfs tmpfs /system/etc/security/cacerts
-        cp /data/local/tmp/bb-ca/* /system/etc/security/cacerts/
-        cp \(remote) /system/etc/security/cacerts/\(hash).0
-        chown root:root /system/etc/security/cacerts/*
-        chmod 644 /system/etc/security/cacerts/*
-        chcon u:object_r:system_file:s0 /system/etc/security/cacerts/*
-        if [ -d /apex/com.android.conscrypt/cacerts ]; then
-          for pid in 1 $(pidof zygote zygote64); do
-            nsenter --mount=/proc/$pid/ns/mnt -- /bin/mount --bind /system/etc/security/cacerts /apex/com.android.conscrypt/cacerts || true
-          done
-        fi
-        """
-        _ = try await adb(device, ["shell", script])
+        let output = try await adb(device, ["shell", Self.injectionScript(hash: hash, remote: remote)])
+        guard output.contains(Self.certificateMarker) else {
+            throw DeviceProxySetupError.unsupported("The certificate could not be installed on the device: \(output.suffix(300))")
+        }
         return true
+    }
+
+    /// adbd restarts as root, and the connection is gone for a moment.
+    private func waitForRoot(_ device: Device) async throws {
+        for _ in 0..<20 {
+            try await Task.sleep(for: .milliseconds(500))
+            if let id = try? await adb(device, ["shell", "id"]), id.contains("uid=0") { return }
+        }
+        throw DeviceProxySetupError.unsupported("The device did not come back as root")
+    }
+
+    static func injectionScript(hash: String, remote: String) -> String {
+        """
+        set -e
+        APEX=/apex/com.android.conscrypt/cacerts
+        STORE=/system/etc/security/cacerts
+        unmount_all() { for i in $(seq 1 100); do grep -q " $1 " /proc/self/mountinfo || return 0; umount -l "$1" 2>/dev/null || return 0; done; }
+        unmount_all $APEX
+        unmount_all $STORE
+        rm -rf /data/local/tmp/bb-ca
+        mkdir -p -m 700 /data/local/tmp/bb-ca
+        if [ -d $APEX ]; then cp $APEX/* /data/local/tmp/bb-ca/; else cp $STORE/* /data/local/tmp/bb-ca/; fi
+        mount -t tmpfs tmpfs $STORE
+        cp /data/local/tmp/bb-ca/* $STORE/
+        cp \(remote) $STORE/\(hash).0
+        chown root:root $STORE/*
+        chmod 644 $STORE/*
+        chcon u:object_r:system_file:s0 $STORE $STORE/*
+        if [ -d $APEX ]; then
+          REBIND="for i in 1 2 3 4 5; do umount -l $APEX 2>/dev/null || break; done; /bin/mount --bind $STORE $APEX"
+          /bin/sh -c "$REBIND"
+          Z_PIDS="$(pidof zygote || true) $(pidof zygote64 || true)"
+          for Z in $Z_PIDS; do nsenter --mount=/proc/$Z/ns/mnt -- /bin/sh -c "$REBIND"; done
+          APP_PIDS=$(echo $Z_PIDS | xargs -n1 ps -o PID -P | grep -v PID || true)
+          for P in $APP_PIDS; do nsenter --mount=/proc/$P/ns/mnt -- /bin/sh -c "$REBIND" & done
+          wait
+          for Z in $Z_PIDS; do nsenter --mount=/proc/$Z/ns/mnt -- test -f $APEX/\(hash).0; done
+        fi
+        rm -rf /data/local/tmp/bb-ca \(remote)
+        echo \(certificateMarker)
+        """
     }
 
     /// Where the device reaches the proxy, whatever port BootBar picked: `adb reverse` maps this port to it.
@@ -256,6 +291,12 @@ public struct DeviceProxySetup: Sendable {
         let installed = (try? await adb(device, ["shell", "dumpsys", "package", Self.helperPackage])) ?? ""
         if let range = installed.range(of: #"versionCode=(\d+)"#, options: .regularExpression),
            let version = Int(installed[range].dropFirst("versionCode=".count)), version >= Self.helperVersion { return }
-        _ = try await adb(device, ["install", "-r", "-g", apk])
+        do {
+            _ = try await adb(device, ["install", "-r", "-g", apk])
+        } catch {
+            // an APK signed with another key (a build from another machine) cannot replace the installed one
+            _ = try? await adb(device, ["uninstall", Self.helperPackage])
+            _ = try await adb(device, ["install", "-g", apk])
+        }
     }
 }
