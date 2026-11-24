@@ -107,6 +107,26 @@ extension SimctlParser {
             .sorted { $0.name.compare($1.name, options: .numeric) == .orderedDescending }
     }
 
+    public struct AppExecutable: Equatable, Sendable {
+        public let bundleId: String
+        public let displayName: String
+        public let executable: String
+        public let isSystem: Bool
+    }
+
+    /// Installed apps with the executable name that appears as the process in logs.
+    public static func parseAppExecutables(_ output: String) -> [AppExecutable] {
+        guard let plist = try? PropertyListSerialization.propertyList(from: Data(output.utf8), format: nil)
+                as? [String: [String: Any]] else { return [] }
+        return plist.compactMap { identifier, info in
+            guard let executable = info["CFBundleExecutable"] as? String else { return nil }
+            let name = (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? identifier
+            return AppExecutable(bundleId: identifier, displayName: name, executable: executable,
+                                 isSystem: (info["ApplicationType"] as? String) == "System")
+        }
+        .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
     /// Where the Files app keeps "On My iPhone": its file provider group container plus `File Provider Storage`.
     public static func fileProviderStorage(listApps output: String) -> String? {
         guard let plist = try? PropertyListSerialization.propertyList(from: Data(output.utf8), format: nil)

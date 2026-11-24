@@ -1,6 +1,6 @@
 import Foundation
 
-public enum LogLevel: Int, Comparable, CaseIterable, Sendable {
+public enum LogLevel: Int, Comparable, CaseIterable, Sendable, Codable {
     case verbose, debug, info, warning, error, fault
 
     public static func < (lhs: LogLevel, rhs: LogLevel) -> Bool { lhs.rawValue < rhs.rawValue }
@@ -53,10 +53,15 @@ public struct LogEntry: Identifiable, Equatable, Sendable {
     /// What the "Apps" filter groups by.
     public var appName: String { app ?? pid.map { "pid \($0)" } ?? "unknown" }
 
+    /// True for the app itself and, on Android, for its other processes (`com.example:remote`).
+    public func belongs(toApp name: String) -> Bool {
+        appName == name || appName.hasPrefix(name + ":")
+    }
+
     public var line: String { "\(time) \(level.letter) \(appName) \(tag): \(message)" }
 }
 
-public struct LogFilter: Equatable, Sendable {
+public struct LogFilter: Equatable, Sendable, Codable {
     public var query = ""
     public var isRegex = false
     public var minimumLevel: LogLevel = .verbose
@@ -90,7 +95,7 @@ public struct LogFilter: Equatable, Sendable {
 
         public func matches(_ entry: LogEntry) -> Bool {
             guard entry.level >= filter.minimumLevel else { return false }
-            if !filter.apps.isEmpty, !filter.apps.contains(entry.appName) { return false }
+            if !filter.apps.isEmpty, !filter.apps.contains(where: { entry.belongs(toApp: $0) }) { return false }
             guard !filter.query.isEmpty else { return true }
             if filter.isRegex {
                 guard let expression else { return true }   // an invalid pattern filters nothing

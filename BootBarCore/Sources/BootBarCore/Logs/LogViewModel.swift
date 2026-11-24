@@ -23,10 +23,16 @@ public final class LogViewModel {
     /// Entries that arrived while paused and are not shown yet.
     public private(set) var queuedWhilePaused = 0
     public private(set) var apps: [AppCount] = []
+    /// Apps you installed on the current device, loaded when the app picker opens.
+    public private(set) var yourApps: [String] = []
+    public private(set) var isFindingApp = false
+    public private(set) var discoveryMessage: String?
 
+    /// Each device keeps its own filter, restored when you come back to it and across launches.
     public var filter = LogFilter() {
         didSet {
             guard filter != oldValue else { return }
+            if let device { savedFilters[device.id] = filter; persistFilters() }
             scheduleRefilter()
         }
     }
@@ -51,15 +57,25 @@ public final class LogViewModel {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var refilterTask: Task<Void, Never>?
+    @ObservationIgnored private var device: Device?
+    @ObservationIgnored private var savedFilters: [String: LogFilter] = [:]
 
     private let runner: any ShellRunner
     private let streamer: any ByteStreaming
     private let locateSDK: @Sendable () -> AndroidSDK?
     private let debounce: Duration
+    private let defaults: UserDefaults?
+    private static let filtersKey = "logFilters"
+    private static let maxSavedFilters = 100
 
     public init(runner: any ShellRunner = ProcessShellRunner(), streamer: any ByteStreaming = ProcessByteStreamer(),
-                capacity: Int = 50_000, debounce: Duration = .milliseconds(150),
+                capacity: Int = 50_000, debounce: Duration = .milliseconds(150), defaults: UserDefaults? = nil,
                 locateSDK: @escaping @Sendable () -> AndroidSDK?) {
+        self.defaults = defaults
+        if let data = defaults?.data(forKey: Self.filtersKey),
+           let saved = try? JSONDecoder().decode([String: LogFilter].self, from: data) {
+            savedFilters = saved
+        }
         self.runner = runner
         self.streamer = streamer
         self.capacity = capacity
@@ -73,6 +89,13 @@ public final class LogViewModel {
     public func start(_ device: Device) {
         stop()
         clear()
+        yourApps = []
+        discoveryMessage = nil
+        if self.device?.id != device.id {
+            self.device = nil   // switching device must not write the old filter over the new device's
+            filter = savedFilters[device.id] ?? LogFilter()
+        }
+        self.device = device
         let source: LogSource
         do {
             source = try LogSource.make(for: device, sdk: locateSDK())
@@ -132,6 +155,37 @@ public final class LogViewModel {
     private func finish(token: Int, error: String?) {
         guard token == generation else { return }
         state = error.map(State.failed) ?? .idle
+    }
+
+    // MARK: Apps
+
+    /// Loads the apps you installed on the current device. Only runs when the picker opens.
+    public func loadYourApps() async {
+        guard let device else { return }
+        let discovery = LogAppDiscovery(runner: runner, sdk: locateSDK())
+        yourApps = (try? await discovery.yourApps(on: device)) ?? []
+    }
+
+    /// Filters the log to the app in the foreground on the device.
+    public func filterToCurrentApp() async {
+        guard let device, !isFindingApp else { return }
+        isFindingApp = true
+        discoveryMessage = nil
+        defer { isFindingApp = false }
+        do {
+            let app = try await LogAppDiscovery(runner: runner, sdk: locateSDK()).currentApp(on: device)
+            filter.apps = [app]
+        } catch {
+            discoveryMessage = String(describing: error)
+        }
+    }
+
+    private func persistFilters() {
+        guard let defaults else { return }
+        if savedFilters.count > Self.maxSavedFilters {
+            savedFilters = Dictionary(uniqueKeysWithValues: savedFilters.sorted { $0.key < $1.key }.suffix(Self.maxSavedFilters / 2).map { ($0.key, $0.value) })
+        }
+        if let data = try? JSONEncoder().encode(savedFilters) { defaults.set(data, forKey: Self.filtersKey) }
     }
 
     // MARK: Entries
