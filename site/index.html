@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deckhand: simulators, emulators and test phones on one deck</title>
+  <meta name="description" content="A native macOS app to start, mirror, inspect and control iOS Simulators, Android Emulators and test phones: live mirror, network inspector, logs and tools. Open source.">
+  <meta name="theme-color" content="#3b82f6">
+  <meta property="og:title" content="Deckhand">
+  <meta property="og:description" content="Every simulator, emulator and test phone on one deck. A native macOS app: live mirror, network inspector, logs and tools.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://ossappcollective.github.io/deckhand/assets/hero.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- icons: small stroke set, used with <use href="#i-name"> -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-apps" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-install" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11M7.5 10 12 14.5 16.5 10M4 15v3a2.5 2.5 0 0 0 2.5 2.5h11A2.5 2.5 0 0 0 20 18v-3"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
+    <symbol id="i-net" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+    <symbol id="i-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H8l1.3-2h5.4L16 6h1.5A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5Z"/><circle cx="12" cy="12.5" r="3.3"/></symbol>
+    <symbol id="i-log" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 11h11M4 16h16M4 21h8"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7.2v9.6L12 21l8-4.2V7.2Z"/><path d="M4 7.2 12 11.5l8-4.3M12 11.5V21"/></symbol>
+    <symbol id="i-headless" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="12" rx="2.5" stroke-dasharray="3 3"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-keys" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="3"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M7 14h10"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.8"/><path d="M11 18.5h2"/></symbol>
+    <symbol id="i-speed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 17a8.5 8.5 0 1 1 15 0M12 13l4-5"/><circle cx="12" cy="13.5" r="1.3"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/></symbol>
+    <symbol id="i-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="5.5" y="5.5" width="13" height="13" rx="2.5"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v8M7 6.8a7.5 7.5 0 1 0 10 0"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.5-5.8M20 4v5h-5"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-mirror" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="12" height="14" rx="2.2"/><path d="M18 8v8M21 10v4"/></symbol>
+    <symbol id="i-side" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M15 4.5v15"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.200-3.100-.1-.3-.5-1.500.1-3.100 0 0 1-.3 3.200 1.200a11 11 0 0 1 5.800 0C17 6.300 18 6.600 18 6.600c.6 1.600.2 2.800.1 3.100.8.8 1.200 1.800 1.200 3.100 0 4.400-2.700 5.400-5.300 5.700.4.400.8 1.100.8 2.200v3.200c0 .4.200.7.800.6A11.500 11.500 0 0 0 12 .5Z"/></symbol>
+    <symbol id="i-dl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+  </defs>
+</svg>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="assets/icon.svg" alt="" width="30" height="30">Deckhand</a>
+    <nav class="nav-links">
+      <a href="#mirror">Mirror</a>
+      <a href="#network">Network</a>
+      <a href="#more">Features</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/ossappcollective/deckhand">GitHub</a>
+      <a class="btn small primary" href="https://github.com/ossappcollective/deckhand/releases/latest" data-download>Download</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ================= Hero ================= -->
+<section class="hero">
+  <div class="wrap">
+    <span class="eyebrow"><i></i><b>Open source</b> · MIT · for macOS 26</span>
+    <h1>Every simulator, emulator and test phone <em>on one deck.</em></h1>
+    <p class="lead">Start them, mirror them, read their network traffic and logs, and drive them with the keys you already know. One native app instead of Xcode, Android Studio and a pile of terminals.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/ossappcollective/deckhand/releases/latest" data-download><svg><use href="#i-dl"/></svg><span data-download-label>Download for macOS</span></a>
+      <a class="btn" href="https://github.com/ossappcollective/deckhand"><svg><use href="#i-github"/></svg>View on GitHub</a>
+    </div>
+    <p class="fine" data-version>Free and open source. No account, no telemetry.</p>
+
+    <div class="stage">
+      <div class="window" role="img" aria-label="The Deckhand window: a device list, the live mirror of an Android emulator, and the tools and network panels">
+        <div class="titlebar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="title">Deckhand</span>
+          <span class="tools">
+            <span class="tb on"><svg><use href="#i-mirror"/></svg></span>
+            <span class="tb"><svg><use href="#i-log"/></svg></span>
+            <span class="tb on"><svg><use href="#i-net"/></svg></span>
+            <span class="tb on"><svg><use href="#i-side"/></svg></span>
+          </span>
+        </div>
+        <div class="cols">
+          <div class="side">
+            <h6>iOS Simulators</h6>
+            <div class="dev"><i class="on"></i><span><b>iPhone 17 Pro</b><small>iOS 27.0</small></span></div>
+            <div class="dev"><i></i><span><b>iPhone 16e</b><small>iOS 26.2</small></span></div>
+            <div class="dev"><i></i><span><b>iPad Pro 13"</b><small>iPadOS 27.0</small></span></div>
+            <h6>Android Emulators</h6>
+            <div class="dev sel"><i class="on"></i><span><b>Pixel 9 Pro</b><small>API 36</small></span></div>
+            <div class="dev"><i></i><span><b>Pixel Tablet</b><small>API 35</small></span></div>
+            <h6>Physical Devices</h6>
+            <div class="dev"><i class="on"></i><span><b>Marie's iPhone</b><small>iOS 27.0.1</small></span></div>
+          </div>
+          <div class="mirror">
+            <div class="screen">
+              <div class="phone">
+                <div class="status"><span>10:02</span><span>5G ▮▮▮</span></div>
+                <h4>Connected devices</h4>
+                <div class="row"><span class="ico" style="background:#6366f1"></span>Pair new device</div>
+                <div class="row"><span class="ico" style="background:#3b82f6"></span>Saved devices</div>
+                <div class="row"><span class="ico" style="background:#22c55e"></span>Connection preferences</div>
+                <div class="row"><span class="ico" style="background:#f59e0b"></span>Visible as “Pixel 9 Pro”</div>
+                <div class="grab"></div>
+              </div>
+            </div>
+            <div class="bar">
+              <svg><use href="#i-back"/></svg><svg><use href="#i-home"/></svg><svg><use href="#i-square"/></svg>
+              <span class="sep"></span><svg><use href="#i-power"/></svg><span class="sep"></span>
+              <svg><use href="#i-rotate"/></svg><svg><use href="#i-cam"/></svg><svg><use href="#i-more"/></svg>
+            </div>
+          </div>
+          <div class="inspector">
+            <div class="insp-head"><i></i><span><b>Pixel 9 Pro</b><small>API 36 · Running</small></span><span class="pill">Stop</span></div>
+            <div class="cards">
+              <div class="card-row"><svg><use href="#i-apps"/></svg>Apps<svg class="chev"><use href="#i-chev"/></svg></div>
+              <div class="card-row"><svg><use href="#i-install"/></svg>Install App<svg class="chev"><use href="#i-chev"/></svg></div>
+              <div class="card-row"><svg><use href="#i-speed"/></svg>Network<svg class="chev"><use href="#i-chev"/></svg></div>
+            </div>
+            <div class="net">
+              <div class="net-head"><span class="seg"><span>Logs</span><span class="on">Network</span></span><span class="rec">● Capture</span><span class="chipp">3G</span></div>
+              <table class="reqs">
+                <tr><th>Status</th><th>Method</th><th>Host</th><th>Path</th><th>Size</th></tr>
+                <tr><td class="st ok">200</td><td class="m">GET</td><td>api.shop.dev</td><td>/v2/products?page=2</td><td>18 KB</td></tr>
+                <tr class="hl"><td class="st ok">201</td><td class="m">POST</td><td>api.shop.dev</td><td>/v2/cart/items</td><td>412 B</td></tr>
+                <tr><td class="st ok">200</td><td class="m">GET</td><td>cdn.shop.dev</td><td>/img/hero@3x.webp</td><td>240 KB</td></tr>
+                <tr><td class="st warn">304</td><td class="m">GET</td><td>api.shop.dev</td><td>/v2/me</td><td>0 B</td></tr>
+                <tr><td class="st bad">404</td><td class="m">GET</td><td>api.shop.dev</td><td>/v2/coupons/SPRING</td><td>96 B</td></tr>
+                <tr><td class="st ok">200</td><td class="m">GET</td><td>tiles.maps.io</td><td>/14/8192/5461.pbf</td><td>31 KB</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="strip">
+  <div class="wrap">
+    <p>Built on the tools you already have</p>
+    <ul><li>simctl</li><li>adb</li><li>emulator</li><li>scrcpy</li><li>Baguette</li><li>Expo · EAS</li></ul>
+  </div>
+</div>
+
+<!-- ================= Mirror ================= -->
+<section id="mirror">
+  <div class="wrap spot">
+    <div class="copy">
+      <div class="kicker">Mirror</div>
+      <h2>See it. Touch it. Rotate it.</h2>
+      <p class="sub">The live screen of whatever you pick, in the same window as its tools. Click, drag, type and paste; drop an app on it to install it.</p>
+      <ul class="checks">
+        <li><span><b>Simulators, emulators and phones</b> in one list, all with the same buttons.</span></li>
+        <li><span><b>Device Hub layout.</b> The mirror and the tools share the window; drag the edge between them.</span></li>
+        <li><span><b>Real rotation.</b> The picture turns the way a phone does, on Android and iOS.</span></li>
+        <li><span><b>Start headless.</b> No second window to hide: the mirror is the only screen.</span></li>
+      </ul>
+    </div>
+    <div class="shot" role="img" aria-label="A mirrored phone turning to landscape, with navigation buttons underneath">
+      <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">Pixel 9 Pro · landscape</span></div>
+      <div class="mirror" style="height:330px">
+        <div class="screen">
+          <div class="phone" style="aspect-ratio:19/9;height:auto;width:92%;max-height:none;padding:12px 18px">
+            <div class="status"><span>10:03</span><span>5G ▮▮▮</span></div>
+            <h4>Wake up to WonderWidgets</h4>
+            <div class="row"><span class="ico" style="background:#6366f1"></span>Overview</div>
+            <div class="row"><span class="ico" style="background:#3b82f6"></span>Why WonderWidgets are great</div>
+            <div class="grab"></div>
+          </div>
+        </div>
+        <div class="bar">
+          <svg><use href="#i-back"/></svg><svg><use href="#i-home"/></svg><svg><use href="#i-square"/></svg>
+          <span class="sep"></span><svg><use href="#i-power"/></svg><span class="sep"></span>
+          <svg><use href="#i-rotate"/></svg><svg><use href="#i-cam"/></svg><svg><use href="#i-more"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Network ================= -->
+<section id="network" style="background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--accent) 5%,transparent),transparent)">
+  <div class="wrap spot flip">
+    <div class="copy">
+      <div class="kicker">Network</div>
+      <h2>Read the traffic. Then break it.</h2>
+      <p class="sub">An HTTP and HTTPS inspector in the spirit of Proxyman and HTTP Toolkit, built into the window of the device it watches.</p>
+      <ul class="checks">
+        <li><span><b>HTTPS, decrypted.</b> Deckhand puts its certificate in the system store of a rootable emulator, in the simulator's keychain, or walks you through a phone.</span></li>
+        <li><span><b>An Android helper that sets itself up.</b> A tiny VPN app points the device at the proxy while you capture, and lets go when you stop.</span></li>
+        <li><span><b>Search, filter, copy as cURL.</b> Headers, bodies, JSON, images, timing, and a per-device filter it remembers.</span></li>
+        <li><span><b>Slow networks.</b> Wi-Fi, LTE, 3G, Edge, a very bad network or none at all.</span></li>
+      </ul>
+    </div>
+    <div style="display:grid;gap:18px">
+      <div class="shot">
+        <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">POST api.shop.dev/v2/cart/items</span></div>
+        <table class="reqs" style="font-size:11.5px">
+          <tr><th>Status</th><th>Method</th><th>Host</th><th>Path</th><th>Time</th></tr>
+          <tr><td class="st ok">200</td><td class="m">GET</td><td>api.shop.dev</td><td>/v2/products</td><td>212 ms</td></tr>
+          <tr class="hl"><td class="st ok">201</td><td class="m">POST</td><td>api.shop.dev</td><td>/v2/cart/items</td><td>148 ms</td></tr>
+          <tr><td class="st bad">500</td><td class="m">PUT</td><td>api.shop.dev</td><td>/v2/checkout</td><td>1.2 s</td></tr>
+        </table>
+        <div class="kv">
+          <span>Content-Type: <b>application/json</b></span>
+          <span>{ <u>"sku"</u>: <b>"TEE-0042"</b>, <u>"qty"</u>: <b>2</b>, <u>"size"</u>: <b>"M"</b> }</span>
+        </div>
+      </div>
+      <div class="shot">
+        <div class="chips">
+          <span class="chip">No limit</span><span class="chip">Wi-Fi</span><span class="chip">LTE</span><span class="chip on">3G</span><span class="chip">Edge</span><span class="chip">Offline</span>
+        </div>
+        <div class="meter">
+          <div><span>Download</span><i style="--w:18%"></i>780 kbps</div>
+          <div><span>Upload</span><i style="--w:8%"></i>330 kbps</div>
+          <div><span>Latency</span><i style="--w:12%"></i>100 ms</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Logs ================= -->
+<section>
+  <div class="wrap spot">
+    <div class="copy">
+      <div class="kicker">Logs</div>
+      <h2>Logcat that you can actually read.</h2>
+      <p class="sub">Search by text or regex, filter by level and by app, arrange the columns, and copy exactly the lines you selected. Nothing is read from a device until the panel is open.</p>
+      <ul class="checks">
+        <li><span><b>Per-app filters</b> with your own apps first, and a button for the app in the foreground.</span></li>
+        <li><span><b>Follows the end</b> until you scroll up, and stays where you are.</span></li>
+        <li><span><b>Remembers each device</b> across launches.</span></li>
+      </ul>
+    </div>
+    <div class="shot">
+      <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">Logs · com.shop.app</span></div>
+      <div class="logs">
+        <p><span class="t">10:02:11.204</span> <span class="I">I</span> ShopApp  Loaded 24 products from cache</p>
+        <p><span class="t">10:02:11.311</span> <span class="D">D</span> OkHttp   --&gt; GET /v2/products?page=2</p>
+        <p><span class="t">10:02:11.523</span> <span class="D">D</span> OkHttp   &lt;-- 200 OK (212ms, 18-byte body)</p>
+        <p><span class="t">10:02:12.040</span> <span class="W">W</span> Choreographer  Skipped 31 frames</p>
+        <p><span class="t">10:02:12.884</span> <span class="E">E</span> Checkout  PUT /v2/checkout failed: HTTP 500</p>
+        <p><span class="t">10:02:12.885</span> <span class="E">E</span> Checkout  Retrying in 2s (attempt 1 of 3)</p>
+        <p><span class="t">10:02:14.901</span> <span class="I">I</span> Checkout  Order accepted</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Features ================= -->
+<section id="more">
+  <div class="wrap">
+    <div class="center">
+      <div class="kicker">And everything around it</div>
+      <h2>The small things that take a minute each.</h2>
+      <p class="sub">Deckhand is a menu bar app first. The quick actions are one click away, and the window opens when you want more.</p>
+    </div>
+    <div class="grid">
+      <div class="tile"><div class="ic"><svg><use href="#i-headless"/></svg></div><h3>Start headless</h3><p>Boot an emulator without its window, or a simulator without the Simulator app. The mirror is the only screen.</p></div>
+      <div class="tile"><div class="ic"><svg><use href="#i-keys"/></svg></div><h3>Real shortcuts</h3><p>⇧⌘H for Home, ⇧⌘A for dark mode, ⌘L to lock: the Simulator's own keys, on Android too.</p></div>
+      <div class="tile"><div class="ic"><svg><use href="#i-install"/></svg></div><h3>Install anything</h3><p>.app, .apk, .aab, .ipa, a .tar.gz from EAS, or a link. Drop a file on the window and it goes to the right place.</p></div>
+      <div class="tile"><div class="ic"><svg><use href="#i-link"/></svg></div><h3>Install links</h3><p><code>expo-orbit://</code> and <code>deckhand://</code> links download a build and install it on the device you pick.</p></div>
+      <div class="tile"><div class="ic"><svg><use href="#i-box"/></svg></div><h3>Virtual devices</h3><p>Create, rename, clone and delete simulators and AVDs, with the advanced hardware options, without opening Xcode or Android Studio.</p></div>
+      <div class="tile"><div class="ic"><svg><use href="#i-cam"/></svg></div><h3>Virtual camera</h3><p>Give a simulator a camera: your webcam, a still or a looping video, for scanners and photo capture.</p></div>
+      <div class="tile"><div class="ic"><svg><use href="#i-moon"/></svg></div><h3>Appearance and text</h3><p>Dark mode, text size, clean 9:41 status bar, animations, show taps and location in a click.</p></div>
+      <div class="tile"><div class="ic"><svg><use href="#i-phone"/></svg></div><h3>Physical devices</h3><p>Android phones over adb and iPhones over devicectl, next to your simulators: install, apps, screenshots, mirror.</p></div>
+    </div>
+
+    <div class="keys">
+      <div class="key">Home <kbd>⇧⌘H</kbd></div>
+      <div class="key">App Switcher <kbd>⌃⌘H</kbd></div>
+      <div class="key">Lock / power <kbd>⌘L</kbd></div>
+      <div class="key">Rotate <kbd>⌘←</kbd> <kbd>⌘→</kbd></div>
+      <div class="key">Dark mode <kbd>⇧⌘A</kbd></div>
+      <div class="key">Screenshot <kbd>⌘S</kbd></div>
+      <div class="key">Record <kbd>⌥⌘R</kbd></div>
+      <div class="key">Mirror · Logs · Network · Tools <kbd>⌥⌘1…4</kbd></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Install ================= -->
+<section id="install" style="padding-top:20px">
+  <div class="wrap">
+    <div class="center">
+      <div class="kicker">Get it</div>
+      <h2>Free, and it stays that way.</h2>
+      <p class="sub">MIT licensed. It makes no network requests of its own, and has no third-party dependencies.</p>
+    </div>
+    <div class="install">
+      <div class="panel">
+        <h3>Download</h3>
+        <p data-release-note>Signed and notarized builds are on the releases page.</p>
+        <a class="btn primary" href="https://github.com/ossappcollective/deckhand/releases/latest" data-download><svg><use href="#i-dl"/></svg><span data-download-label>Download for macOS</span></a>
+        <ul class="reqs-list">
+          <li>macOS 26 or later</li>
+          <li>Xcode, for the iOS side</li>
+          <li>The Android SDK, for the Android side</li>
+          <li>Optional: <code>brew install scrcpy baguette</code> for the fastest mirror, touch and rotation on simulators</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Build from source</h3>
+        <p>Swift 6 and Xcode. The helper app is optional and needs a JDK.</p>
+        <div class="copy">
+          <button type="button" data-copy>Copy</button>
+<pre id="build"><span class="c"># clone</span>
+<span class="k">git</span> clone https://github.com/ossappcollective/deckhand.git
+<span class="k">cd</span> deckhand
+
+<span class="c"># optional: the Android helper app (JDK 17 or 21, Android SDK 36)</span>
+DeckhandHelper/build.sh
+
+<span class="c"># build and run</span>
+<span class="k">xcodebuild</span> -project Deckhand.xcodeproj -scheme Deckhand -derivedDataPath build build
+<span class="k">open</span> build/Build/Products/Debug/Deckhand.app</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FAQ ================= -->
+<section style="padding-top:20px">
+  <div class="wrap">
+    <div class="center"><div class="kicker">Questions</div><h2>Before you ask.</h2></div>
+    <div class="faq">
+      <details><summary>Does it work without Xcode, or without Android Studio?</summary><p>Yes. Each side works without the other. With no Xcode the iOS section shows a hint and Android keeps working, and the other way round. Only the Android SDK's <code>emulator</code> and <code>platform-tools</code> are needed for Android.</p></details>
+      <details><summary>Why can't it decrypt some apps' HTTPS?</summary><p>Android apps that target Android 7 or later ignore certificates the user installs, so only the system certificate store works for them. That needs an emulator image that allows <code>adb root</code> (AOSP or Google APIs, not Google Play). Deckhand reads the device and says so, and a banner offers to trust the certificate system-wide when the image allows it. Apps that pin their certificates cannot be decrypted by any proxy.</p></details>
+      <details><summary>Does it phone home?</summary><p>No. Deckhand makes no network requests of its own. The only download is the one you trigger yourself, such as installing a build from a URL.</p></details>
+      <details><summary>Is there a Windows or Linux version?</summary><p>Not yet. Deckhand is a native macOS app. An Android-only build for Windows and Linux is being investigated.</p></details>
+      <details><summary>How is it related to BootBar?</summary><p>Deckhand began as a fork of <a href="https://github.com/dipendra-sharma/BootBar" style="text-decoration:underline">BootBar</a> by Dipendra Sharma and keeps its MIT license. It has grown a lot since then, and has its own name.</p></details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <a class="brand" href="#top"><img src="assets/icon.svg" alt="" width="26" height="26">Deckhand</a>
+      <p>Open source under the MIT license. Began as a fork of BootBar by Dipendra Sharma. Built on scrcpy and Baguette, and inspired by Proxyman and HTTP Toolkit.</p>
+    </div>
+    <div class="links">
+      <a href="https://github.com/ossappcollective/deckhand">GitHub</a>
+      <a href="https://github.com/ossappcollective/deckhand/blob/main/docs/guide.md">Guide</a>
+      <a href="https://github.com/ossappcollective/deckhand/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/ossappcollective/deckhand/issues">Issues</a>
+      <a href="https://github.com/ossappcollective/deckhand/blob/main/LICENSE">License</a>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
