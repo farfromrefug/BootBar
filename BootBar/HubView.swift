@@ -160,7 +160,7 @@ struct HubView: View {
                             Divider()
                             DeviceManageContent(device: device, onGone: { router.selection = nil })
                         }
-                        .frame(minWidth: Self.inspectorMin, maxWidth: showMirror ? Self.inspectorMax : .infinity)
+                        .frame(minWidth: Self.inspectorMin, maxWidth: .infinity)
                         .background(.background.secondary)
                     }
                 }
@@ -219,7 +219,6 @@ struct HubView: View {
     }
 
     private static let inspectorMin: CGFloat = 340
-    private static let inspectorMax: CGFloat = 480
     /// Height of the button strip under the picture; it is part of the column but not of the picture.
     static let barHeight: CGFloat = 36
 
@@ -239,15 +238,16 @@ struct HubView: View {
         return min(width, max(room, 200))
     }
 
-    /// Resizes the window so the middle column hugs the picture and the tools panel keeps a sensible width.
+    /// Resizes the window so the middle column hugs the picture and the tools panel keeps at least its minimum width.
     private func scheduleFit(detailWidth: CGFloat, mirrorWidth: CGFloat) {
         fitTask?.cancel()
         guard showMirror else { return }
         fitTask = Task {
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled, let window, !window.styleMask.contains(.fullScreen) else { return }
+            // the tools panel may take any extra width; only the picture column and a hidden panel are pinned
             let lower = showInspector ? mirrorWidth + Self.inspectorMin : mirrorWidth
-            let upper = showInspector ? mirrorWidth + Self.inspectorMax : mirrorWidth
+            let upper = showInspector ? CGFloat.infinity : mirrorWidth
             let delta = min(max(detailWidth, lower), upper) - detailWidth
             guard abs(delta) > 1.5 else { return }
             var frame = window.frame
