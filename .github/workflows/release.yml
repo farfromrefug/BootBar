@@ -1,0 +1,298 @@
+name: Release
+
+# Builds, signs and notarizes BootBar.
+#
+#   * push of a `v*` tag             -> build, notarize, publish a GitHub release for that tag
+#   * manual run, `release` ticked   -> bump the version, build, notarize, push the bump commit and
+#                                       tag, publish a GitHub release
+#   * manual run, `release` unticked -> build only; the zip and dmg are uploaded as a workflow
+#                                       artifact (signed and notarized when the secrets exist,
+#                                       unsigned otherwise, so forks and pull requests still work)
+#
+# Secrets (same names as the Tauri release workflow):
+#   APPLE_CERTIFICATE           base64 of the "Developer ID Application" .p12
+#   APPLE_CERTIFICATE_PASSWORD  password of that .p12
+#   APPLE_IDENTITY_ID           signing identity, e.g. "Developer ID Application: Name (TEAMID)"
+#                               (optional: the first Developer ID identity in the .p12 is used if empty)
+#   APPLE_ID                    Apple ID e-mail used for notarization
+#   APPLE_PASSWORD              app-specific password for that Apple ID
+#   APPLE_TEAM_ID               10 character team id
+# APPLE_PROVIDER_SHORT_NAME is not needed: notarytool only wants the team id.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Publish a GitHub release. Unticked = build only and upload the result as a workflow artifact.'
+        type: boolean
+        default: false
+      bump:
+        description: 'Version bump for a manual release (ignored for build-only runs and tag pushes).'
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PROJECT: BootBar.xcodeproj
+  SCHEME: BootBar
+  APP_NAME: BootBar
+
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - name: Package tests
+        run: swift test --package-path BootBarCore
+
+  build:
+    needs: test
+    runs-on: macos-26
+    # a manual release pushes the version bump commit and tag, and publishes the release
+    permissions:
+      contents: write
+    env:
+      IS_RELEASE: ${{ github.event_name == 'push' || inputs.release }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_IDENTITY_ID: ${{ secrets.APPLE_IDENTITY_ID }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # the bump needs the tags, and the push needs a real clone
+          fetch-depth: 0
+
+      - name: Check signing secrets
+        id: signing
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          if [ "$IS_RELEASE" = true ]; then
+            echo "::error::A release must be signed and notarized, but these secrets are missing: ${missing[*]}"
+            exit 1
+          fi
+          echo "::warning::Missing secrets (${missing[*]}): building an unsigned, un-notarized app."
+
+      - name: Work out the version
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          current=$(grep -m1 'MARKETING_VERSION' "$PROJECT/project.pbxproj" | sed -E 's/.*= *"?([^";]+)"?;.*/\1/')
+          build_number="$GITHUB_RUN_NUMBER"
+          if [ "$EVENT" = push ]; then
+            version="${GITHUB_REF_NAME#v}"
+            bumped=false
+          elif [ "$IS_RELEASE" = true ]; then
+            IFS=. read -r major minor patch <<< "$current"
+            major=${major:-0}; minor=${minor:-0}; patch=${patch:-0}
+            case "$BUMP" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              *) patch=$((patch + 1)) ;;
+            esac
+            version="$major.$minor.$patch"
+            bumped=true
+          else
+            version="$current"
+            bumped=false
+          fi
+          if [ "$IS_RELEASE" = true ] && git rev-parse -q --verify "refs/tags/v$version" >/dev/null && [ "$bumped" = true ]; then
+            echo "::error::Tag v$version already exists"
+            exit 1
+          fi
+          echo "Version $version (build $build_number), project currently at $current"
+          {
+            echo "version=$version"
+            echo "build_number=$build_number"
+            echo "bumped=$bumped"
+          } >> "$GITHUB_OUTPUT"
+
+      # The bump is committed locally here and only pushed once the build has been notarized,
+      # so a failed run leaves no tag or commit behind.
+      - name: Bump version in the project
+        if: steps.version.outputs.bumped == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+        run: |
+          set -euo pipefail
+          sed -i '' -E "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = $VERSION;/" "$PROJECT/project.pbxproj"
+          sed -i '' -E "s/CURRENT_PROJECT_VERSION = [^;]+;/CURRENT_PROJECT_VERSION = $BUILD_NUMBER;/" "$PROJECT/project.pbxproj"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): $VERSION"
+          git tag "v$VERSION"
+
+      - name: Import signing certificate
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password=$(uuidgen)
+          echo "KEYCHAIN_PATH=$keychain" >> "$GITHUB_ENV"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
+          # existing keychains stay in the search list; ours goes first
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+          identity="$APPLE_IDENTITY_ID"
+          if [ -z "$identity" ]; then
+            identity=$(security find-identity -v -p codesigning "$keychain" \
+              | grep 'Developer ID Application' | head -1 | sed -E 's/^ *[0-9]+\) ([0-9A-F]+) .*/\1/')
+          fi
+          if [ -z "$identity" ]; then
+            echo "::error::No 'Developer ID Application' identity found in the certificate"
+            exit 1
+          fi
+          echo "SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+          security find-identity -v -p codesigning "$keychain"
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+          SIGNING: ${{ steps.signing.outputs.enabled }}
+        run: |
+          set -euo pipefail
+          if [ "$SIGNING" = true ]; then
+            signing_args=(
+              CODE_SIGN_STYLE=Manual
+              "CODE_SIGN_IDENTITY=$SIGNING_IDENTITY"
+              "DEVELOPMENT_TEAM=$APPLE_TEAM_ID"
+              PROVISIONING_PROFILE_SPECIFIER=
+              ENABLE_HARDENED_RUNTIME=YES
+              "OTHER_CODE_SIGN_FLAGS=--timestamp --keychain $KEYCHAIN_PATH"
+            )
+          else
+            signing_args=(CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=)
+          fi
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build \
+            "MARKETING_VERSION=$VERSION" "CURRENT_PROJECT_VERSION=$BUILD_NUMBER" \
+            "${signing_args[@]}" build
+          app="build/Build/Products/Release/$APP_NAME.app"
+          test -d "$app"
+          echo "APP_PATH=$app" >> "$GITHUB_ENV"
+          codesign --verify --deep --strict --verbose=2 "$app" || [ "$SIGNING" != true ]
+
+      - name: Notarize and staple app
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          ditto -c -k --keepParent "$APP_PATH" "$RUNNER_TEMP/notarize-app.zip"
+          ./.github/scripts/notarize.sh "$RUNNER_TEMP/notarize-app.zip"
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+          spctl --assess --type execute --verbose=4 "$APP_PATH"
+
+      - name: Package
+        id: package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SIGNING: ${{ steps.signing.outputs.enabled }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          name="$APP_NAME-$VERSION"
+
+          ditto -c -k --keepParent "$APP_PATH" "dist/$name.zip"
+
+          staging="$RUNNER_TEMP/dmg"
+          rm -rf "$staging"
+          mkdir -p "$staging"
+          ditto "$APP_PATH" "$staging/$APP_NAME.app"
+          ln -s /Applications "$staging/Applications"
+          hdiutil create -volname "$APP_NAME" -srcfolder "$staging" -ov -format UDZO "dist/$name.dmg"
+
+          if [ "$SIGNING" = true ]; then
+            codesign --force --timestamp --keychain "$KEYCHAIN_PATH" --sign "$SIGNING_IDENTITY" "dist/$name.dmg"
+            ./.github/scripts/notarize.sh "dist/$name.dmg"
+            xcrun stapler staple "dist/$name.dmg"
+            xcrun stapler validate "dist/$name.dmg"
+          fi
+
+          (cd dist && shasum -a 256 "$name.zip" "$name.dmg" > SHA256SUMS.txt)
+          ls -la dist
+
+      # Build-only run: hand the result over as a workflow artifact
+      - name: Upload build artifact
+        if: env.IS_RELEASE != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-${{ steps.version.outputs.version }}-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Push version bump and tag
+        if: steps.version.outputs.bumped == 'true'
+        run: |
+          set -euo pipefail
+          # pushed with GITHUB_TOKEN, so the new tag does not start this workflow a second time.
+          # A protected branch needs a token that may bypass the protection instead.
+          git push origin "HEAD:$GITHUB_REF_NAME"
+          git push origin "v${{ steps.version.outputs.version }}"
+
+      - name: Publish GitHub release
+        if: env.IS_RELEASE == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+
+          # release notes: the CHANGELOG section for this version, else GitHub's generated notes
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if [ -s "$RUNNER_TEMP/notes.md" ]; then
+            notes=(--notes-file "$RUNNER_TEMP/notes.md")
+          else
+            notes=(--generate-notes)
+          fi
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* --verify-tag --title "$APP_NAME $tag" --latest "${notes[@]}"
+          fi
+
+      - name: Remove signing keychain
+        if: always() && steps.signing.outputs.enabled == 'true'
+        run: |
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
