@@ -47,3 +47,87 @@ public enum SimctlParser {
         }
     }
 }
+
+public struct SimulatorDeviceType: Identifiable, Sendable, Equatable {
+    public let id: String
+    public let name: String
+
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+}
+
+public struct SimulatorRuntime: Identifiable, Sendable, Equatable {
+    public let id: String
+    public let name: String
+    public let supportedDeviceTypeIds: Set<String>
+
+    public init(id: String, name: String, supportedDeviceTypeIds: Set<String>) {
+        self.id = id
+        self.name = name
+        self.supportedDeviceTypeIds = supportedDeviceTypeIds
+    }
+}
+
+private struct SimctlDeviceTypeList: Decodable {
+    struct Entry: Decodable {
+        let identifier: String
+        let name: String
+        let productFamily: String
+    }
+    let devicetypes: [Entry]
+}
+
+private struct SimctlRuntimeList: Decodable {
+    struct Entry: Decodable {
+        struct SupportedType: Decodable { let identifier: String }
+        let identifier: String
+        let name: String
+        let isAvailable: Bool
+        let supportedDeviceTypes: [SupportedType]
+    }
+    let runtimes: [Entry]
+}
+
+extension SimctlParser {
+    private static let creatableFamilies: Set<String> = ["iPhone", "iPad"]
+
+    public static func parseDeviceTypes(json: String) throws -> [SimulatorDeviceType] {
+        try JSONDecoder().decode(SimctlDeviceTypeList.self, from: Data(json.utf8)).devicetypes
+            .filter { creatableFamilies.contains($0.productFamily) }
+            .map { SimulatorDeviceType(id: $0.identifier, name: $0.name) }
+    }
+
+    public static func parseRuntimes(json: String) throws -> [SimulatorRuntime] {
+        try JSONDecoder().decode(SimctlRuntimeList.self, from: Data(json.utf8)).runtimes
+            .filter { $0.isAvailable && $0.identifier.hasPrefix("com.apple.CoreSimulator.SimRuntime.iOS") }
+            .map { SimulatorRuntime(id: $0.identifier, name: $0.name,
+                                    supportedDeviceTypeIds: Set($0.supportedDeviceTypes.map(\.identifier))) }
+            .sorted { $0.name.compare($1.name, options: .numeric) == .orderedDescending }
+    }
+
+    /// Where the Files app keeps "On My iPhone": its file provider group container plus `File Provider Storage`.
+    public static func fileProviderStorage(listApps output: String) -> String? {
+        guard let plist = try? PropertyListSerialization.propertyList(from: Data(output.utf8), format: nil)
+                as? [String: [String: Any]] else { return nil }
+        for info in plist.values {
+            guard let groups = info["GroupContainers"] as? [String: String],
+                  let container = groups["group.com.apple.FileProvider.LocalStorage"],
+                  let url = URL(string: container) else { continue }
+            return url.path + "/File Provider Storage"
+        }
+        return nil
+    }
+
+    /// `simctl listapps` prints an OpenStep property list keyed by bundle identifier.
+    public static func parseApps(_ output: String) -> [InstalledApp] {
+        guard let plist = try? PropertyListSerialization.propertyList(from: Data(output.utf8), format: nil)
+                as? [String: [String: Any]] else { return [] }
+        return plist.map { identifier, info in
+            let name = (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? identifier
+            return InstalledApp(id: identifier, name: name, isSystem: (info["ApplicationType"] as? String) == "System")
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+}

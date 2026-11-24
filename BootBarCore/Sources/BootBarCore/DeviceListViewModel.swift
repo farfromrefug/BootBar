@@ -8,12 +8,18 @@ public final class DeviceListViewModel {
     public private(set) var androidDevices: [Device] = []
     public private(set) var iosError: String?
     public private(set) var androidError: String?
+    public private(set) var physicalDevices: [Device] = []
+    public private(set) var physicalError: String?
     public private(set) var busyDeviceIds: Set<String> = []
     public private(set) var rowErrors: [String: String] = [:]
 
     private let simulatorService: SimulatorService
     private let runner: any ShellRunner
     private let locateSDK: @Sendable () -> AndroidSDK?
+    private let launchOptions: @Sendable () -> AndroidLaunchOptions
+    private let showPhysicalDevices: @Sendable () -> Bool
+    private let physicalIOSInterval: Duration
+    private var physicalIOSCache: (at: ContinuousClock.Instant, devices: [Device])?
     private let bootTimeout: Duration
     private let now: @Sendable () -> ContinuousClock.Instant
     private var bootDeadlines: [String: ContinuousClock.Instant] = [:]
@@ -22,12 +28,22 @@ public final class DeviceListViewModel {
     public init(runner: any ShellRunner = ProcessShellRunner(),
                 bootTimeout: Duration = .seconds(60),
                 now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
+                launchOptions: @escaping @Sendable () -> AndroidLaunchOptions = { AndroidLaunchOptions() },
+                showPhysicalDevices: @escaping @Sendable () -> Bool = { false },
+                physicalIOSInterval: Duration = .seconds(15),
                 locateSDK: @escaping @Sendable () -> AndroidSDK?) {
         self.runner = runner
         self.simulatorService = SimulatorService(runner: runner)
         self.bootTimeout = bootTimeout
         self.now = now
+        self.launchOptions = launchOptions
+        self.showPhysicalDevices = showPhysicalDevices
+        self.physicalIOSInterval = physicalIOSInterval
         self.locateSDK = locateSDK
+    }
+
+    public func device(id: String) -> Device? {
+        (iosDevices + androidDevices + physicalDevices).first { $0.id == id }
     }
 
     public func refresh() async {
@@ -44,8 +60,10 @@ public final class DeviceListViewModel {
     private func reload() async {
         async let ios = loadIOS()
         async let android = loadAndroid()
+        async let physical = loadPhysical()
         let iosResult = await ios
         let androidResult = await android
+        (physicalDevices, physicalError) = await physical
         pruneBootDeadlines(presentIds: Set(iosResult.0.map(\.id)).union(androidResult.0.map(\.id)))
         (iosDevices, iosError) = (overlayBooting(iosResult.0), iosResult.1)
         (androidDevices, androidError) = (overlayBooting(androidResult.0), androidResult.1)
@@ -68,6 +86,30 @@ public final class DeviceListViewModel {
         await refresh()
     }
 
+    private func loadPhysical() async -> ([Device], String?) {
+        guard showPhysicalDevices() else { return ([], nil) }
+        let service = PhysicalDeviceService(runner: runner)
+        var devices: [Device] = []
+        var errors: [String] = []
+
+        if let sdk = locateSDK() {
+            do { devices += try await service.listAndroid(sdk: sdk) } catch { errors.append(friendlyMessage(error)) }
+        }
+        if let cache = physicalIOSCache, now() < cache.at + physicalIOSInterval {
+            devices += cache.devices
+        } else {
+            do {
+                let ios = try await service.listIOS()
+                physicalIOSCache = (now(), ios)
+                devices += ios
+            } catch {
+                errors.append(friendlyMessage(error))
+                devices += physicalIOSCache?.devices ?? []
+            }
+        }
+        return (devices, errors.first)
+    }
+
     private func loadIOS() async -> ([Device], String?) {
         do {
             return (try await simulatorService.listDevices(), nil)
@@ -88,6 +130,9 @@ public final class DeviceListViewModel {
     }
 
     private func execute(_ action: DeviceAction, on device: Device) async throws {
+        guard !device.isPhysical else {
+            throw ShellError(command: "device", exitCode: 1, stderr: "Physical devices can't be started or stopped from here")
+        }
         switch device.platform {
         case .ios: try await executeIOS(action, on: device)
         case .android: try await executeAndroid(action, on: device)
@@ -96,7 +141,7 @@ public final class DeviceListViewModel {
 
     private func executeIOS(_ action: DeviceAction, on device: Device) async throws {
         switch action {
-        case .start: try await simulatorService.boot(device.id)
+        case .start, .startWithAlternateAudio: try await simulatorService.boot(device.id)
         case .stop: try await simulatorService.shutdown(device.id)
         case .coldBoot: try await simulatorService.coldBoot(device)
         case .erase: try await simulatorService.erase(device)
@@ -109,6 +154,7 @@ public final class DeviceListViewModel {
         }
         switch action {
         case .start: try await service.start(device.name)
+        case .startWithAlternateAudio: try await service.start(device.name, muteAudio: !launchOptions().muteAudio)
         case .stop: try await service.stop(serial: try serial(of: device))
         case .coldBoot: try await service.coldBoot(device)
         case .erase: try await service.wipe(device)
@@ -125,7 +171,7 @@ public final class DeviceListViewModel {
 
     private func expectsBoot(_ action: DeviceAction, _ device: Device) -> Bool {
         switch action {
-        case .start, .coldBoot: true
+        case .start, .startWithAlternateAudio, .coldBoot: true
         case .erase: device.platform == .android
         case .stop: false
         }
@@ -150,7 +196,7 @@ public final class DeviceListViewModel {
     }
 
     private func emulatorService() -> EmulatorService? {
-        locateSDK().map { EmulatorService(runner: runner, sdk: $0) }
+        locateSDK().map { EmulatorService(runner: runner, sdk: $0, launchOptions: launchOptions()) }
     }
 
     private func friendlyMessage(_ error: Error) -> String {

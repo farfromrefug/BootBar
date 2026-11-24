@@ -18,6 +18,14 @@ public struct ShellError: Error, Equatable, Sendable {
     }
 }
 
+public enum ErrorMessage {
+    /// What to show for a failed command: its stderr, or the exit code when it said nothing.
+    public static func friendly(_ error: Error) -> String {
+        guard let shellError = error as? ShellError else { return error.localizedDescription }
+        return shellError.stderr.isEmpty ? "Command failed (exit \(shellError.exitCode))" : shellError.stderr
+    }
+}
+
 private let capturedStderrLimit = 8 * 1024
 
 private final class OutputBuffer: @unchecked Sendable {
@@ -153,6 +161,7 @@ public struct ProcessShellRunner: ShellRunner {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        process.standardInput = FileHandle.nullDevice
         let stdout = Pipe()
         let stderr = Pipe()
         process.standardOutput = stdout

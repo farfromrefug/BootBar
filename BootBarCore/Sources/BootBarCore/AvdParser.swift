@@ -19,6 +19,24 @@ public enum AvdParser {
             .map { EmulatorDevice(serial: $0[0], online: $0[1] == "device") }
     }
 
+    public struct PhysicalAndroidDevice: Sendable, Equatable {
+        public let serial: String
+        public let state: String
+        public let model: String?
+    }
+
+    /// Non-emulator entries of `adb devices -l`.
+    public static func parsePhysicalDevices(_ output: String) -> [PhysicalAndroidDevice] {
+        output.split(whereSeparator: \.isNewline).compactMap { line in
+            let tokens = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+            guard tokens.count >= 2, !tokens[0].hasPrefix("emulator-"), tokens[0] != "List",
+                  !tokens[0].hasPrefix("*") else { return nil }
+            let model = tokens.dropFirst(2).first { $0.hasPrefix("model:") }
+                .map { String($0.dropFirst("model:".count)).replacingOccurrences(of: "_", with: " ") }
+            return PhysicalAndroidDevice(serial: tokens[0], state: tokens[1], model: model)
+        }
+    }
+
     public static func parseConsoleAvdName(_ output: String) -> String? {
         let line = output.split(whereSeparator: \.isNewline).first
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

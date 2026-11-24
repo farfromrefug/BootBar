@@ -3,6 +3,7 @@ import Foundation
 public struct EmulatorService: Sendable {
     private let runner: any ShellRunner
     private let sdk: AndroidSDK
+    private let launchOptions: AndroidLaunchOptions
     private let avdHome: String
     private let consoleTimeout: Duration
     private let shutdownTimeout: Duration
@@ -11,6 +12,7 @@ public struct EmulatorService: Sendable {
     private let readFile: @Sendable (String) -> String?
 
     public init(runner: any ShellRunner, sdk: AndroidSDK,
+                launchOptions: AndroidLaunchOptions = AndroidLaunchOptions(),
                 avdHome: String = NSHomeDirectory() + "/.android/avd",
                 consoleTimeout: Duration = .seconds(3),
                 shutdownTimeout: Duration = .seconds(30),
@@ -19,6 +21,7 @@ public struct EmulatorService: Sendable {
                 readFile: @escaping @Sendable (String) -> String? = { try? String(contentsOfFile: $0, encoding: .utf8) }) {
         self.runner = runner
         self.sdk = sdk
+        self.launchOptions = launchOptions
         self.avdHome = avdHome
         self.consoleTimeout = consoleTimeout
         self.shutdownTimeout = shutdownTimeout
@@ -37,8 +40,10 @@ public struct EmulatorService: Sendable {
         }
     }
 
-    public func start(_ name: String, extraArguments: [String] = []) async throws {
-        try await runner.launchDetached(sdk.emulatorPath, ["-avd", name] + extraArguments,
+    /// `muteAudio` overrides the global launch option for this start only.
+    public func start(_ name: String, muteAudio: Bool? = nil, extraArguments: [String] = []) async throws {
+        try await runner.launchDetached(sdk.emulatorPath,
+                                        ["-avd", name] + launchOptions.arguments(muted: muteAudio) + extraArguments,
                                         failureWindow: launchFailureWindow)
     }
 

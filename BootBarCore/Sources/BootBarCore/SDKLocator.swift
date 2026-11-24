@@ -1,12 +1,26 @@
 import Foundation
 
 public struct AndroidSDK: Sendable, Equatable {
+    public let root: String
     public let emulatorPath: String
     public let adbPath: String
 
     public init(root: String) {
+        self.root = root
         emulatorPath = root + "/emulator/emulator"
         adbPath = root + "/platform-tools/adb"
+    }
+
+    public var systemImagesPath: String { root + "/system-images" }
+}
+
+extension AndroidSDK {
+    /// Where `avdmanager` may live, newest layout first.
+    func avdManagerCandidates(listDirectory: (String) -> [String]) -> [String] {
+        let versioned = listDirectory(root + "/cmdline-tools").sorted().reversed()
+            .filter { $0 != "latest" }
+            .map { root + "/cmdline-tools/\($0)/bin/avdmanager" }
+        return [root + "/cmdline-tools/latest/bin/avdmanager"] + versioned + [root + "/tools/bin/avdmanager"]
     }
 }
 
