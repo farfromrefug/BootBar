@@ -105,8 +105,10 @@ The window icon in the panel header (or **Open in the BootBar window** on a devi
 
 The **Logs** toolbar button opens the selected device's log at the bottom of the right panel: `adb logcat` for Android emulators and phones, `log stream` for simulators (a real iPhone has no log stream Apple exposes outside Console.app). Drag the bar above it to resize, or use the expand button to give the log the whole right panel and hide the tools.
 
-- Search by text or regular expression (matches message, tag and app), filter by minimum level, and filter by one or several apps; right-click a line to show or hide its app.
-- Android package names are resolved from the process list; simulators report the executable name.
+- Search by text or regular expression (matches message, tag and app) and filter by minimum level.
+- **Apps:** the target button shows only the app in the foreground (`dumpsys` on Android, the accessibility root through Baguette on simulators). The Apps button opens a bounded, alphabetical picker with your own apps first and everything seen in the log below; Android apps include their other processes. Right-click a line to show or hide its app.
+- **Per device:** each device remembers its own filter, also across launches.
+- **Columns:** drag a header to reorder, drag its right edge to resize, right-click the header to hide columns (including PID, hidden by default), pick a shorter time format or reset.
 - Pause keeps collecting without scrolling, Follow sticks to the newest line, Copy puts the visible lines on the clipboard. The last 50,000 lines are kept.
 
 ### Keyboard, clipboard and drag & drop

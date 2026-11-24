@@ -12,7 +12,7 @@ struct HubView: View {
     @AppStorage("hubShowsInspector") private var showInspector = true
     @AppStorage("hubLogMode") private var logModeRaw = LogPanelMode.hidden.rawValue
     @AppStorage("hubLogHeight") private var logHeight = 280.0
-    @State private var logs = LogViewModel { Preferences.locateSDK() }
+    @State private var logs = LogViewModel(defaults: .standard) { Preferences.locateSDK() }
     @State private var dropTargeted = false
     @State private var window: NSWindow?
     @State private var fitTask: Task<Void, Never>?

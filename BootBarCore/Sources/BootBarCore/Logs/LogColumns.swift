@@ -14,10 +14,13 @@ public enum LogColumn: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    /// What the column header says; short for narrow columns.
+    public var headerTitle: String { self == .level ? "Lvl" : title }
+
     public var defaultWidth: Double {
         switch self {
         case .time: 84
-        case .level: 22
+        case .level: 28
         case .app: 110
         case .tag: 110
         case .pid: 46
