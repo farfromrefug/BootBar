@@ -47,7 +47,14 @@ public final class LogViewModel {
         }
     }
 
-    public let capacity: Int
+    /// How many lines are kept; lowering it drops the oldest lines at once.
+    @ObservationIgnored public var capacity: Int {
+        didSet {
+            capacity = max(capacity, 100)
+            guard capacity < oldValue, entries.count > capacity else { return }
+            trimToCapacity()
+        }
+    }
 
     @ObservationIgnored private var entries: [LogEntry] = []
     @ObservationIgnored private var queue: [LogEntry] = []
@@ -211,12 +218,19 @@ public final class LogViewModel {
         }
         entries.append(contentsOf: numbered)
         if entries.count > capacity {
-            entries.removeFirst(max(entries.count - capacity, capacity / 10))
-            rebuildCounts()
-            refilterNow()
+            trimToCapacity()
         } else {
             visible.append(contentsOf: numbered.filter(matcher.matches))
         }
+        totalCount = entries.count
+        publishApps()
+    }
+
+    /// Drops the oldest lines, plus a tenth more so trimming does not happen on every batch.
+    private func trimToCapacity() {
+        entries.removeFirst(min(entries.count, max(entries.count - capacity, capacity / 10)))
+        rebuildCounts()
+        refilterNow()
         totalCount = entries.count
         publishApps()
     }
@@ -244,8 +258,13 @@ public final class LogViewModel {
         visible = filter.isActive ? entries.filter(matcher.matches) : entries
     }
 
-    /// The visible lines as text, for copying or saving.
+    /// Whole lines, one per row, for copying or saving.
     public func text(of entries: [LogEntry]? = nil) -> String {
         (entries ?? visible).map(\.line).joined(separator: "\n")
+    }
+
+    /// Only the messages, one per row.
+    public func messages(of entries: [LogEntry]? = nil) -> String {
+        (entries ?? visible).map(\.message).joined(separator: "\n")
     }
 }

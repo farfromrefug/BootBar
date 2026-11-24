@@ -198,3 +198,24 @@ private struct LinesStreamer: ByteStreaming {
     model.stop()
     #expect(model.state == .idle)
 }
+
+@MainActor
+@Test func copyTextKeepsLinesAndMessagesApartWithLineBreaks() {
+    let model = makeModel()
+    let first = LogEntry(time: "12:00:00.000", level: .warning, pid: 1, app: "App", tag: "T", message: "one")
+    let second = LogEntry(time: "12:00:01.000", level: .error, pid: 1, app: "App", tag: "T", message: "two")
+    #expect(model.text(of: [first, second]) == "12:00:00.000 W App T: one\n12:00:01.000 E App T: two")
+    #expect(model.messages(of: [first, second]) == "one\ntwo")
+    #expect(model.messages(of: []) == "")
+}
+
+@MainActor
+@Test func loweringTheCapacityTrimsAtOnceAndNeverGoesBelowAFloor() {
+    let model = makeModel(capacity: 1000)
+    model.ingest((1...500).map { entry("m\($0)") })
+    model.capacity = 200
+    #expect(model.totalCount <= 200)
+    #expect(model.visible.last?.message == "m500")
+    model.capacity = 1
+    #expect(model.capacity == 100)
+}
