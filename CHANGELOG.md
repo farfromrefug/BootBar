@@ -12,6 +12,7 @@ All notable changes to BootBar are documented here.
 - Capturing stops by itself when the captured device stops
 - Device and Panels menus with the Simulator's shortcuts (Home, App Switcher, Lock, rotate, dark mode, text size, screenshot, recording) for simulators and emulators
 - Android rotation goes through the window manager (every app obeys it, and phones can rotate too), the mirror follows the new size, and the window follows the picture; a window made smaller shrinks the picture instead of springing back
+- With the tools panel closed, dragging the window resizes the picture in proportion instead of leaving empty space; the compact button bar keeps Power and Rotate
 - Android rotation always locks the orientation and goes from a landscape back to portrait (a phone never turns upside down)
 - Fixed: the scrcpy mirror died on the first rotation (the stream's session packet was read as video data)
 - Network: slow the network down (Wi-Fi, LTE, 3G, Edge, Very Bad Network, Offline or custom): emulators through the emulator, simulators and phones through the proxy

@@ -19,6 +19,7 @@ struct HubView: View {
     @Environment(NetworkViewModel.self) private var network
     @State private var dropTargeted = false
     @State private var window: NSWindow?
+    @State private var fitter = MirrorWindowFitter()
     @State private var fitTask: Task<Void, Never>?
     /// Width / height of the picture last shown; sizes the middle column so it has no black bars.
     @State private var aspect: CGFloat = 9.0 / 19.5
@@ -94,7 +95,7 @@ struct HubView: View {
         }
         .onChange(of: logBuffer, initial: true) { _, lines in logs.capacity = lines }
         .onChange(of: networkPort, initial: true) { _, port in network.preferredPort = port > 0 ? port : nil }
-        .background(WindowReader { window = $0 })
+        .background(WindowReader { window = $0; fitter.attach($0) })
         // the app is a menu bar agent; while this window is open it also gets a Dock icon
         .onAppear {
             NSApp.setActivationPolicy(.regular)
@@ -220,6 +221,14 @@ struct HubView: View {
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
+                // tools panel closed: dragging the window resizes the picture in proportion (see MirrorWindowFitter)
+                .onChange(of: FitterKey(size: geometry.size, aspect: aspect, inspector: showInspector, mirror: showMirror, deviceId: device.id),
+                          initial: true) { _, _ in
+                    fitter.aspect = aspect
+                    fitter.barHeight = (device.platform == .android || !device.isPhysical) ? Self.barHeight : 0
+                    fitter.isActive = showMirror && !showInspector
+                    fitter.measure(detail: geometry.size)
+                }
                 // a window the user makes smaller just shrinks the picture: only these changes resize it by themselves
                 .onChange(of: FitKey(deviceId: device.id, inspector: showInspector, showsMirror: showMirror, panel: logMode != .hidden)) { _, _ in
                     fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size)
@@ -353,6 +362,14 @@ struct HubView: View {
     private var inspectorMin: CGFloat { logMode != .hidden && (showInspector || !showMirror) ? 640 : 340 }
     /// Height of the button strip under the picture; it is part of the column but not of the picture.
     static let barHeight: CGFloat = 36
+
+    private struct FitterKey: Equatable {
+        let size: CGSize
+        let aspect: CGFloat
+        let inspector: Bool
+        let mirror: Bool
+        let deviceId: String
+    }
 
     private struct FitKey: Equatable {
         let deviceId: String
@@ -602,7 +619,13 @@ private struct MirrorPane: View {
             key(.back, "chevron.left", "Back")
             key(.home, "circle", "Home")
             key(.appSwitch, "square", "Overview")
+            key(.power, "power", "Power")
+            if DeviceTool.rotate.isSupported(for: device) {
+                Button { Task { await tools.perform(.rotate, on: device) } } label: { Image(systemName: "rotate.right") }
+                    .help("Rotate")
+            }
             Button { Task { await tools.perform(.screenshot, on: device) } } label: { Image(systemName: "camera") }
+                .help("Screenshot")
         }
     }
 
