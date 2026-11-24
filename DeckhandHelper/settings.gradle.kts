@@ -11,5 +11,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "BootBarHelper"
+rootProject.name = "DeckhandHelper"
 include(":app")

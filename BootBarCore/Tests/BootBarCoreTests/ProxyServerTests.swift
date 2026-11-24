@@ -437,7 +437,7 @@ private let jsonHandler: UpstreamServer.Handler = { head, body in
 
 @Test func helperAppIsDrivenThroughItsActivity() {
     let watch = DeviceProxySetup.helperArguments("watch")
-    #expect(watch.starts(with: ["shell", "am", "start", "-n", "com.bootbar.helper/.MainActivity"]))
+    #expect(watch.starts(with: ["shell", "am", "start", "-n", "com.deckhand.helper/.MainActivity"]))
     #expect(watch.contains("watch") && watch.contains("8899") && watch.contains("quiet"))
     #expect(DeviceProxySetup.helperArguments("stop").contains("stop"))
 }
@@ -548,7 +548,7 @@ private func trustSetup(_ runner: MockShellRunner) throws -> (DeviceProxySetup, 
 @Test func theBundledHelperVersionMatchesItsGradleVersionCode() throws {
     let gradle = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        .appendingPathComponent("BootBarHelper/app/build.gradle.kts")
+        .appendingPathComponent("DeckhandHelper/app/build.gradle.kts")
     let text = try String(contentsOf: gradle, encoding: .utf8)
     let line = try #require(text.split(separator: "\n").first { $0.contains("versionCode") })
     #expect(line.contains("= \(DeviceProxySetup.helperVersion)"))

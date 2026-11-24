@@ -1,4 +1,4 @@
-package com.bootbar.helper
+package com.deckhand.helper
 
 import android.app.Notification
 import android.app.NotificationChannel

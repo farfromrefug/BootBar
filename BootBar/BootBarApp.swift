@@ -14,7 +14,7 @@ struct BootBarApp: App {
     @State private var hubRouter = HubRouter()
     @State private var networkModel = NetworkViewModel(
         defaults: .standard,
-        helperAPK: { Bundle.main.path(forResource: "BootBarHelper", ofType: "apk") },
+        helperAPK: { Bundle.main.path(forResource: "DeckhandHelper", ofType: "apk") },
         locateSDK: { Preferences.locateSDK() })
     @State private var installCenter = InstallRequestCenter.shared
 

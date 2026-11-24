@@ -77,7 +77,7 @@ jobs:
           fetch-depth: 0
 
       # The helper app (a small VPN that points Android devices at the proxy) is bundled in the app as
-      # BootBar/BootBarHelper.apk. It is signed with a debug key: it is only ever installed over adb,
+      # BootBar/DeckhandHelper.apk. It is signed with a debug key: it is only ever installed over adb,
       # and BootBar reinstalls it when the key differs, so no secret is needed.
       - uses: actions/setup-java@v4
         with:
@@ -88,11 +88,11 @@ jobs:
         run: |
           set -euo pipefail
           sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
-          echo "sdk.dir=$sdk" > BootBarHelper/local.properties
+          echo "sdk.dir=$sdk" > DeckhandHelper/local.properties
           yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$sdk/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" > /dev/null
-          BootBarHelper/build.sh
-          test -s BootBar/BootBarHelper.apk
+          DeckhandHelper/build.sh
+          test -s BootBar/DeckhandHelper.apk
 
       - name: Check signing secrets
         id: signing
@@ -247,7 +247,7 @@ jobs:
 
           ditto -c -k --keepParent "$APP_PATH" "dist/$name.zip"
           # the helper on its own, for devices that BootBar does not reach over adb
-          cp BootBar/BootBarHelper.apk "dist/BootBarHelper-$VERSION.apk"
+          cp BootBar/DeckhandHelper.apk "dist/DeckhandHelper-$VERSION.apk"
 
           staging="$RUNNER_TEMP/dmg"
           rm -rf "$staging"
@@ -263,7 +263,7 @@ jobs:
             xcrun stapler validate "dist/$name.dmg"
           fi
 
-          (cd dist && shasum -a 256 "$name.zip" "$name.dmg" "BootBarHelper-$VERSION.apk" > SHA256SUMS.txt)
+          (cd dist && shasum -a 256 "$name.zip" "$name.dmg" "DeckhandHelper-$VERSION.apk" > SHA256SUMS.txt)
           ls -la dist
 
       # Build-only run: hand the result over as a workflow artifact

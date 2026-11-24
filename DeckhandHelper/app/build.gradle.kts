@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.bootbar.helper"
+    namespace = "com.deckhand.helper"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.bootbar.helper"
+        applicationId = "com.deckhand.helper"
         minSdk = 29
         targetSdk = 35
         versionCode = 2

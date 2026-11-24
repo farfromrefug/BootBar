@@ -1,4 +1,4 @@
-package com.bootbar.helper
+package com.deckhand.helper
 
 import android.animation.ValueAnimator
 import android.content.Context

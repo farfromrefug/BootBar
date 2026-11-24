@@ -1,4 +1,4 @@
-package com.bootbar.helper
+package com.deckhand.helper
 
 import android.content.Intent
 import android.net.ProxyInfo

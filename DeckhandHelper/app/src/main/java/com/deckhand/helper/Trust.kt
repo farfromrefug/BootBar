@@ -1,4 +1,4 @@
-package com.bootbar.helper
+package com.deckhand.helper
 
 import android.os.Build
 import java.security.KeyStore
@@ -32,7 +32,7 @@ enum class Trust {
                 var user = false
                 for (alias in store.aliases()) {
                     val certificate = store.getCertificate(alias) as? X509Certificate ?: continue
-                    if (!certificate.subjectX500Principal.name.contains("BootBar Proxy CA")) continue
+                    if (!certificate.subjectX500Principal.name.contains("Deckhand Proxy CA")) continue
                     if (alias.startsWith("system:")) return SYSTEM
                     user = true
                 }

@@ -1,4 +1,4 @@
-package com.bootbar.helper
+package com.deckhand.helper
 
 import android.app.Activity
 import android.content.Intent
@@ -22,7 +22,7 @@ import android.widget.TextView
 
 /**
  * The screen, and the way BootBar drives the helper over adb:
- * `am start -n com.bootbar.helper/.MainActivity --es command watch --es host 127.0.0.1 --ei port 8899 --ez quiet true`
+ * `am start -n com.deckhand.helper/.MainActivity --es command watch --es host 127.0.0.1 --ei port 8899 --ez quiet true`
  * (`unwatch` turns it off; `start` and `stop` bring the VPN up or down once, without watching).
  */
 class MainActivity : Activity() {

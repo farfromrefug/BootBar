@@ -49,7 +49,7 @@ public struct DeviceProxySetup: Sendable {
     private let statePath: String
     /// The small VPN app that points an Android device at the proxy; without it the global proxy setting is used.
     private let helperAPK: String?
-    public static let helperPackage = "com.bootbar.helper"
+    public static let helperPackage = "com.deckhand.helper"
     /// `versionCode` of the bundled helper: a device with an older one gets the new build.
     public static let helperVersion = 2
 

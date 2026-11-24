@@ -71,7 +71,7 @@ public final class CertificateAuthority: @unchecked Sendable {
     private func createRoot() throws {
         _ = try run(["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", keyPath])
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyPath)
-        let name = "BootBar Proxy CA (\(ProcessInfo.processInfo.hostName.prefix(30)))"
+        let name = "Deckhand Proxy CA (\(ProcessInfo.processInfo.hostName.prefix(30)))"
         let config = """
         [req]
         distinguished_name=dn
