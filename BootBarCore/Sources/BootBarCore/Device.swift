@@ -15,6 +15,9 @@ public enum DeviceAction: Sendable {
     case start
     /// Android only: starts with the opposite of the global "mute audio" option. Plain start on iOS.
     case startWithAlternateAudio
+    /// Starts without the device's own window, so the mirror in BootBar is the only screen: `-no-window` on Android,
+    /// and on iOS the Simulator app is not opened.
+    case startHeadless
     case stop
     case coldBoot
     case erase

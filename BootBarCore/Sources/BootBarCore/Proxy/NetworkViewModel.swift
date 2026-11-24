@@ -51,6 +51,8 @@ public final class NetworkViewModel {
     @ObservationIgnored private var server: ProxyServer?
     @ObservationIgnored private var authority: CertificateAuthority?
     @ObservationIgnored private var device: Device?
+    /// The device was running when the list last changed, so that stopping it can be told from never having started.
+    @ObservationIgnored private var deviceWasRunning = false
     @ObservationIgnored private var savedFilters: [String: HTTPFilter] = [:]
     @ObservationIgnored private var refilterTask: Task<Void, Never>?
     @ObservationIgnored private var configuredAndroid: [String: Device] = [:]
@@ -155,6 +157,17 @@ public final class NetworkViewModel {
         if isRunning { state = .stopped }
     }
 
+    /// Called whenever the device list changes: capturing ends with the device that was being captured.
+    public func deviceListChanged(_ devices: [Device]) async {
+        guard let device else { deviceWasRunning = false; return }
+        let running = devices.first { $0.id == device.id }?.state == .running
+        let stopped = deviceWasRunning && !running
+        deviceWasRunning = running
+        guard isRunning, stopped else { return }
+        await stop()
+        setupMessage = "\(device.name) stopped, so capturing stopped too."
+    }
+
     public func dismissSetupMessage() {
         setupMessage = nil
     }
@@ -230,6 +243,7 @@ public final class NetworkViewModel {
             filter = savedFilters[device.id] ?? HTTPFilter()
         }
         self.device = device
+        deviceWasRunning = device.state == .running
         setupMessage = nil
         if isRunning, device.platform == .android { await attachAndroidHelpers() }
         await refreshDeviceState()

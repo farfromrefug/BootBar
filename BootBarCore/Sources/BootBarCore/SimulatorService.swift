@@ -19,9 +19,10 @@ public struct SimulatorService: Sendable {
         return try SimctlParser.parseDevices(json: json)
     }
 
-    public func boot(_ udid: String) async throws {
+    /// `showsWindow: false` leaves the Simulator app closed: the simulator runs without a window of its own.
+    public func boot(_ udid: String, showsWindow: Bool = true) async throws {
         try await run(["simctl", "boot", udid], acceptingStateOf: udid) { $0 != .stopped }
-        await openSimulatorApp()
+        if showsWindow { await openSimulatorApp() }
     }
 
     public func shutdown(_ udid: String) async throws {

@@ -99,6 +99,9 @@ struct DeviceRowView: View {
 
     private var actionMenu: some View {
         Menu {
+            if !device.isPhysical && device.state == .stopped {
+                Button("Start Headless") { onAction(.startHeadless) }
+            }
             if !device.isPhysical && device.platform == .android && device.state == .stopped {
                 Button(muteAudio ? "Start with Sound" : "Start without Sound") {
                     onAction(.startWithAlternateAudio)

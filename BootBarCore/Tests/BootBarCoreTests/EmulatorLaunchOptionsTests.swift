@@ -68,3 +68,15 @@ private func makeService(_ options: AndroidLaunchOptions) -> (EmulatorService, M
     await vm.perform(.start, on: device)
     #expect(runner.commands.contains("detached /sdk/emulator/emulator -avd Pixel_8 -no-audio"))
 }
+
+@MainActor
+@Test func startHeadlessLaunchesTheEmulatorWithoutAWindow() async {
+    let runner = MockShellRunner()
+    let device = Device(id: "Pixel_8", name: "Pixel_8", platform: .android, osVersion: "API 34", state: .stopped)
+    runner.responses["/usr/bin/xcrun simctl list devices --json"] = .success(#"{"devices":{}}"#)
+    runner.responses["/sdk/emulator/emulator -list-avds"] = .success("")
+    runner.responses["/sdk/platform-tools/adb devices"] = .success("List of devices attached\n")
+    let model = DeviceListViewModel(runner: runner, launchOptions: { AndroidLaunchOptions(muteAudio: true) }) { AndroidSDK(root: "/sdk") }
+    await model.perform(.startHeadless, on: device)
+    #expect(runner.commands.filter { $0.hasPrefix("detached ") } == ["detached /sdk/emulator/emulator -avd Pixel_8 -no-audio -no-window"])
+}

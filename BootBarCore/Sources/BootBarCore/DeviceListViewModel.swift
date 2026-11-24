@@ -142,6 +142,7 @@ public final class DeviceListViewModel {
     private func executeIOS(_ action: DeviceAction, on device: Device) async throws {
         switch action {
         case .start, .startWithAlternateAudio: try await simulatorService.boot(device.id)
+        case .startHeadless: try await simulatorService.boot(device.id, showsWindow: false)
         case .stop: try await simulatorService.shutdown(device.id)
         case .coldBoot: try await simulatorService.coldBoot(device)
         case .erase: try await simulatorService.erase(device)
@@ -155,6 +156,7 @@ public final class DeviceListViewModel {
         switch action {
         case .start: try await service.start(device.name)
         case .startWithAlternateAudio: try await service.start(device.name, muteAudio: !launchOptions().muteAudio)
+        case .startHeadless: try await service.start(device.name, extraArguments: ["-no-window"])
         case .stop: try await service.stop(serial: try serial(of: device))
         case .coldBoot: try await service.coldBoot(device)
         case .erase: try await service.wipe(device)
@@ -171,7 +173,7 @@ public final class DeviceListViewModel {
 
     private func expectsBoot(_ action: DeviceAction, _ device: Device) -> Bool {
         switch action {
-        case .start, .startWithAlternateAudio, .coldBoot: true
+        case .start, .startWithAlternateAudio, .startHeadless, .coldBoot: true
         case .erase: device.platform == .android
         case .stop: false
         }

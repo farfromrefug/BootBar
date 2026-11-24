@@ -86,6 +86,9 @@ struct HubView: View {
             }
         }
         .onChange(of: router.selection) { _, _ in creating = nil }
+        .onChange(of: list.iosDevices + list.androidDevices + list.physicalDevices) { _, devices in
+            Task { await network.deviceListChanged(devices) }
+        }
         .onChange(of: logBuffer, initial: true) { _, lines in logs.capacity = lines }
         .onChange(of: networkPort, initial: true) { _, port in network.preferredPort = port > 0 ? port : nil }
         .background(WindowReader { window = $0 })
@@ -146,6 +149,7 @@ struct HubView: View {
                 Button("Stop") { Task { await list.perform(.stop, on: device) } }
             } else if device.state == .stopped {
                 Button("Start") { Task { await list.perform(.start, on: device) } }
+                Button("Start Headless") { Task { await list.perform(.startHeadless, on: device) } }
                 if device.platform == .android {
                     Button("Start without/with Sound") { Task { await list.perform(.startWithAlternateAudio, on: device) } }
                 }
@@ -413,6 +417,7 @@ private struct MirrorPane: View {
     let device: Device
     let controller: MirrorController
     @Environment(DeviceToolsViewModel.self) private var tools
+    @Environment(DeviceListViewModel.self) private var list
 
     private var key: String { "\(device.id)|\(device.state)" }
 
@@ -436,8 +441,34 @@ private struct MirrorPane: View {
     private var overlay: some View {
         switch controller.state {
         case .idle:
-            Text(device.state == .running ? "" : "Start the device to mirror it")
-                .foregroundStyle(.white.opacity(0.6))
+            if device.state == .running {
+                EmptyView()
+            } else if device.state == .booting || list.busyDeviceIds.contains(device.id) {
+                VStack(spacing: 8) {
+                    ProgressView().controlSize(.small).tint(.white)
+                    Text("Starting \(device.name)…").foregroundStyle(.white.opacity(0.6))
+                }
+            } else if device.isPhysical {
+                Text("Connect and unlock the device to mirror it").foregroundStyle(.white.opacity(0.6))
+            } else {
+                VStack(spacing: 10) {
+                    Text("Start the device to mirror it").foregroundStyle(.white.opacity(0.6))
+                    HStack(spacing: 8) {
+                        Button { Task { await list.perform(.start, on: device) } } label: {
+                            Label("Start", systemImage: "play.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button { Task { await list.perform(.startHeadless, on: device) } } label: {
+                            Label("Start Headless", systemImage: "rectangle.dashed")
+                        }
+                        .buttonStyle(.bordered)
+                        .help(device.platform == .ios
+                              ? "Boots the simulator without opening the Simulator app: this mirror is its only screen"
+                              : "Starts the emulator without its own window: this mirror is its only screen")
+                    }
+                    .controlSize(.small).disabled(device.state == .unavailable)
+                }
+            }
         case .starting:
             ProgressView().controlSize(.small).tint(.white)
         case .live:

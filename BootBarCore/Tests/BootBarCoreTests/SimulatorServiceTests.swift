@@ -66,6 +66,12 @@ private func bootingDevice() -> Device {
     ])
 }
 
+@Test func headlessBootLeavesTheSimulatorAppClosed() async throws {
+    let (service, runner, _) = makeService()
+    try await service.boot("UDID-1", showsWindow: false)
+    #expect(runner.commands == ["/usr/bin/xcrun simctl boot UDID-1"])
+}
+
 @Test func bootOpensDeviceHubWhenXcodeShipsNoSimulatorApp() async throws {
     let (service, runner, _) = makeService(installedApp: deviceHubApp)
     try await service.boot("UDID-1")

@@ -553,3 +553,31 @@ private func trustSetup(_ runner: MockShellRunner) throws -> (DeviceProxySetup, 
     let line = try #require(text.split(separator: "\n").first { $0.contains("versionCode") })
     #expect(line.contains("= \(DeviceProxySetup.helperVersion)"))
 }
+
+// MARK: Capture follows the device
+
+@MainActor
+@Test func capturingStopsWhenTheCapturedDeviceStops() async throws {
+    let runner = MockShellRunner()
+    let model = NetworkViewModel(runner: runner, makeAuthority: { try makeAuthority() }, locateSDK: { nil })
+    let running = Device(id: "sim", name: "Sim", platform: .ios, osVersion: "26", state: .running)
+    await model.select(running)
+    await model.start(routeMac: false)
+    #expect(model.isRunning)
+    await model.deviceListChanged([running])
+    #expect(model.isRunning)
+    await model.deviceListChanged([running.withState(.stopped)])
+    #expect(!model.isRunning)
+    #expect(model.setupMessage?.contains("stopped") == true)
+}
+
+@MainActor
+@Test func capturingWithADeviceThatNeverStartedIsLeftAlone() async throws {
+    let model = NetworkViewModel(runner: MockShellRunner(), makeAuthority: { try makeAuthority() }, locateSDK: { nil })
+    let stopped = Device(id: "sim", name: "Sim", platform: .ios, osVersion: "26", state: .stopped)
+    await model.select(stopped)
+    await model.start(routeMac: false)
+    await model.deviceListChanged([stopped])
+    #expect(model.isRunning)
+    await model.stop()
+}
