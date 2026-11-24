@@ -13,6 +13,8 @@ struct MenuBarPanelView: View {
     @Environment(DeviceListViewModel.self) private var viewModel
     @Environment(DeviceToolsViewModel.self) private var toolsModel
     @Environment(DeviceManagementViewModel.self) private var managementModel
+    @Environment(\.openWindow) private var openWindow
+    @Environment(HubRouter.self) private var hubRouter
     @State private var route: PanelRoute = .list
     @Environment(\.openSettings) private var openSettings
     @Environment(\.scenePhase) private var scenePhase
@@ -45,7 +47,7 @@ struct MenuBarPanelView: View {
                 footer
             }
         case .detail(let deviceId):
-            DeviceDetailView(deviceId: deviceId, onBack: { route = .list })
+            DeviceDetailView(deviceId: deviceId, onBack: { route = .list }, onOpenHub: { openHub(selecting: $0.id) })
         case .create(let platform):
             CreateDeviceView(platform: platform, onDone: { route = .list })
         }
@@ -89,6 +91,11 @@ struct MenuBarPanelView: View {
             Label("BootBar", systemImage: "iphone")
                 .font(.system(size: 13, weight: .semibold))
             Spacer()
+            Button { openHub(selecting: nil) } label: {
+                Image(systemName: "macwindow").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Open the BootBar window")
             Button {
                 Task { await viewModel.refresh() }
             } label: {
@@ -172,6 +179,12 @@ struct MenuBarPanelView: View {
 
     private func connectedSummary(_ devices: [Device]) -> String {
         "\(devices.count(where: { $0.state == .running })) connected"
+    }
+
+    private func openHub(selecting deviceId: String?) {
+        if let deviceId { hubRouter.selection = deviceId }
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: "hub")
     }
 
     private func deleteDevice(_ device: Device) {

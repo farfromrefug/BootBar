@@ -5,6 +5,7 @@ import BootBarCore
 struct DeviceDetailView: View {
     let deviceId: String
     let onBack: () -> Void
+    var onOpenHub: ((Device) -> Void)?
 
     @Environment(DeviceListViewModel.self) private var listModel
 
@@ -13,6 +14,14 @@ struct DeviceDetailView: View {
             if let device = listModel.device(id: deviceId) {
                 HStack(spacing: 0) {
                     PanelHeader(title: device.name, subtitle: "\(device.osVersion) · \(stateLabel(device))", onBack: onBack)
+                    if let onOpenHub {
+                        Button { onOpenHub(device) } label: {
+                            Image(systemName: "macwindow").foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open in the BootBar window")
+                        .padding(.trailing, 14)
+                    }
                 }
                 Divider()
                 DeviceManageContent(device: device, onGone: onBack)

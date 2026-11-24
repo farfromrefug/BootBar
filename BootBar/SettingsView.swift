@@ -6,7 +6,9 @@ struct SettingsView: View {
     @AppStorage(Preferences.extraArgumentsKey) private var extraArguments = ""
     @AppStorage(Preferences.captureDirectoryKey) private var captureDirectory = ""
     @AppStorage(Preferences.showPhysicalDevicesKey) private var showPhysicalDevices = true
+    @AppStorage(Preferences.syncClipboardKey) private var syncClipboard = true
     @State private var launchModel = LaunchAtLoginModel()
+    @State private var linkHandler = LinkHandlerModel()
 
     var body: some View {
         Form {
@@ -37,6 +39,27 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Mirror") {
+                Toggle("Sync the clipboard with the mirrored device", isOn: $syncClipboard)
+                Text("While a mirror is open, what you copy on the Mac is available to paste on the device and the other way round. Turn off if you copy secrets you do not want on a test device.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Install links") {
+                Toggle("Open expo-orbit:// links in BootBar", isOn: Binding(
+                    get: { linkHandler.isDefault },
+                    set: { linkHandler.setDefault($0) }))
+                Text("EAS and Expo \"Open in Orbit\" links download the build and ask which device to install it on. Turn off to give the links back to Expo Orbit.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let message = linkHandler.errorMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+
             Section("Emulator launch") {
                 Toggle("Start without sound", isOn: $muteAudio)
                 Text("Adds -no-audio. Each device's menu then offers Start with Sound for a single launch.")
@@ -62,6 +85,7 @@ struct SettingsView: View {
         .fixedSize()
         .onAppear {
             launchModel.refresh()
+            linkHandler.refresh()
         }
     }
 }
