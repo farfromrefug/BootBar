@@ -581,3 +581,100 @@ private func trustSetup(_ runner: MockShellRunner) throws -> (DeviceProxySetup, 
     #expect(model.isRunning)
     await model.stop()
 }
+
+// MARK: Network conditions
+
+private let bigHandler: UpstreamServer.Handler = { _, _ in
+    (200, [HTTPHeader("Content-Type", "application/octet-stream")], Data(repeating: 7, count: 16 * 1024))
+}
+
+private func seconds(_ work: () async throws -> Void) async rethrows -> TimeInterval {
+    let start = Date()
+    try await work()
+    return Date().timeIntervalSince(start)
+}
+
+@Test func latencyIsAddedToEachRequest() async throws {
+    let authority = try makeAuthority()
+    defer { try? FileManager.default.removeItem(atPath: authority.directory) }
+    let upstream = UpstreamServer(handler: jsonHandler)
+    try upstream.start()
+    defer { upstream.stop() }
+    let proxy = try startProxy(authority, recorder: FlowRecorder())
+    defer { proxy.stop() }
+    let url = "http://127.0.0.1:\(upstream.port)/x"
+
+    let normal = try await seconds { _ = try await curl(proxyPort: proxy.port, url: url) }
+    proxy.conditions = NetworkConditions(name: "slow", latencyMs: 600)
+    let slow = try await seconds { _ = try await curl(proxyPort: proxy.port, url: url) }
+    #expect(slow - normal > 0.5)
+}
+
+@Test func downloadSpeedIsLimitedAndLiftedAgain() async throws {
+    let authority = try makeAuthority()
+    defer { try? FileManager.default.removeItem(atPath: authority.directory) }
+    let upstream = UpstreamServer(handler: bigHandler)
+    try upstream.start()
+    defer { upstream.stop() }
+    let proxy = try startProxy(authority, recorder: FlowRecorder())
+    defer { proxy.stop() }
+    let url = "http://127.0.0.1:\(upstream.port)/big"
+
+    // 16 KB at 160 kbps is about 0.8 s
+    proxy.conditions = NetworkConditions(name: "slow", downKbps: 160)
+    let slow = try await seconds { _ = try await curl(proxyPort: proxy.port, url: url) }
+    #expect(slow > 0.7)
+    proxy.conditions = .online
+    let fast = try await seconds { _ = try await curl(proxyPort: proxy.port, url: url) }
+    #expect(fast < 0.5)
+}
+
+@Test func offlineFailsConnectionsAndIsRecorded() async throws {
+    let authority = try makeAuthority()
+    defer { try? FileManager.default.removeItem(atPath: authority.directory) }
+    let upstream = UpstreamServer(handler: jsonHandler)
+    try upstream.start()
+    defer { upstream.stop() }
+    let recorder = FlowRecorder()
+    let proxy = try startProxy(authority, recorder: recorder)
+    defer { proxy.stop() }
+    proxy.conditions = .offlineProfile
+
+    let result = try await curl(proxyPort: proxy.port, url: "http://127.0.0.1:\(upstream.port)/x")
+    #expect(result.exit != 0)
+    #expect(recorder.flows.contains { $0.state == .failed && $0.error?.contains("Offline") == true })
+}
+
+@Test func conditionsPresetsDescribeThemselves() {
+    #expect(NetworkConditions.presets.first == .online)
+    #expect(NetworkConditions.presets.last?.offline == true)
+    let threeG = NetworkConditions.presets.first { $0.name == "3G" }
+    #expect(threeG?.summary == "780 kbps down, 330 kbps up, 100 ms")
+    #expect(NetworkConditions(name: "x", downKbps: 40_000).summary == "40 Mbps down, unlimited up")
+    #expect(!NetworkConditions.online.isLimited)
+}
+
+@MainActor
+@Test func conditionsGoToTheProxyForSimulatorsAndToTheEmulatorForAndroid() async throws {
+    let runner = MockShellRunner()
+    let model = NetworkViewModel(runner: runner, makeAuthority: { try makeAuthority() }, locateSDK: { AndroidSDK(root: "/sdk") })
+    let sim = Device(id: "sim", name: "Sim", platform: .ios, osVersion: "26", state: .running)
+    let avd = Device(id: "avd", name: "Pixel", platform: .android, osVersion: "API 36", state: .running, serial: "emulator-5554")
+    let threeG = NetworkConditions.presets.first { $0.name == "3G" }!
+
+    await model.select(sim)
+    await model.setConditions(threeG)
+    #expect(model.conditions == threeG)
+    #expect(runner.commands.isEmpty)       // nothing on a device: the proxy applies it
+
+    await model.select(avd)
+    #expect(model.conditions == .online)   // the emulator has its own setting
+    await model.setConditions(threeG)
+    #expect(runner.commands.contains("/sdk/platform-tools/adb -s emulator-5554 emu network speed 330:780"))
+    await model.select(sim)
+    #expect(model.conditions == threeG)
+    // the emulator forgets its network settings when it stops
+    await model.select(avd)
+    await model.deviceListChanged([avd.withState(.stopped)])
+    #expect(model.conditions == .online)
+}

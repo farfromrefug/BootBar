@@ -19,6 +19,9 @@ public final class NetworkViewModel {
     public private(set) var setupMessage: String?
     public private(set) var isWorking = false
     public private(set) var deviceState = DeviceProxyState()
+    /// The slower network of the selected device, if any. Emulators are slowed down themselves, everything else
+    /// through the proxy while it is capturing.
+    public private(set) var conditions = NetworkConditions.online
     public var selectedFlowId: Int?
     public var isPaused = false
 
@@ -53,6 +56,10 @@ public final class NetworkViewModel {
     @ObservationIgnored private var device: Device?
     /// The device was running when the list last changed, so that stopping it can be told from never having started.
     @ObservationIgnored private var deviceWasRunning = false
+    /// What the proxy applies: one setting for every device it inspects.
+    @ObservationIgnored private var proxyConditions = NetworkConditions.online
+    /// What was set on each Android emulator itself.
+    @ObservationIgnored private var emulatorConditions: [String: NetworkConditions] = [:]
     @ObservationIgnored private var savedFilters: [String: HTTPFilter] = [:]
     @ObservationIgnored private var refilterTask: Task<Void, Never>?
     @ObservationIgnored private var configuredAndroid: [String: Device] = [:]
@@ -130,6 +137,7 @@ public final class NetworkViewModel {
             let server = ProxyServer(authority: authority, options: options) { [weak self] flow in
                 Task { @MainActor in self?.receive(flow) }
             }
+            server.conditions = proxyConditions
             try server.start()
             return server
         }
@@ -159,6 +167,10 @@ public final class NetworkViewModel {
 
     /// Called whenever the device list changes: capturing ends with the device that was being captured.
     public func deviceListChanged(_ devices: [Device]) async {
+        // an emulator forgets its network settings when it stops
+        let stillRunning = Set(devices.filter { $0.state == .running }.map(\.id))
+        emulatorConditions = emulatorConditions.filter { stillRunning.contains($0.key) }
+        conditions = conditionsForSelectedDevice()
         guard let device else { deviceWasRunning = false; return }
         let running = devices.first { $0.id == device.id }?.state == .running
         let stopped = deviceWasRunning && !running
@@ -166,6 +178,34 @@ public final class NetworkViewModel {
         guard isRunning, stopped else { return }
         await stop()
         setupMessage = "\(device.name) stopped, so capturing stopped too."
+    }
+
+    /// Whether the selected device is slowed down by its emulator rather than by the proxy.
+    public var slowsEmulator: Bool { device.map { $0.platform == .android && !$0.isPhysical } ?? false }
+
+    /// Slows the selected device's network down, or lifts it with `.online`.
+    public func setConditions(_ new: NetworkConditions) async {
+        guard let device else { return }
+        if device.platform == .android, !device.isPhysical {
+            guard let sdk = locateSDK() else { setupMessage = "Android SDK not found — set path in Settings"; return }
+            do {
+                try await EmulatorTools(runner: runner, sdk: sdk).setNetwork(device, new)
+                emulatorConditions[device.id] = new
+            } catch {
+                setupMessage = ErrorMessage.friendly(error)
+                return
+            }
+        } else {
+            proxyConditions = new
+            server?.conditions = new
+            if new.isLimited, !isRunning { setupMessage = "The network is slowed down once capturing starts." }
+        }
+        conditions = new
+    }
+
+    private func conditionsForSelectedDevice() -> NetworkConditions {
+        guard let device else { return .online }
+        return device.platform == .android && !device.isPhysical ? emulatorConditions[device.id] ?? .online : proxyConditions
     }
 
     public func dismissSetupMessage() {
@@ -244,6 +284,7 @@ public final class NetworkViewModel {
         }
         self.device = device
         deviceWasRunning = device.state == .running
+        conditions = conditionsForSelectedDevice()
         setupMessage = nil
         if isRunning, device.platform == .android { await attachAndroidHelpers() }
         await refreshDeviceState()

@@ -101,6 +101,24 @@ The window icon in the panel header (or **Open in the BootBar window** on a devi
 
 `brew install scrcpy` switches the window to scrcpy's server automatically (BootBar talks to it directly, no scrcpy window opens). **Tools → scrcpy** still opens scrcpy's own window. While the window is open BootBar also shows in the Dock.
 
+**Start headless.** A stopped device shows Start and Start Headless in the mirror, and the device menus have Start Headless. An emulator then runs with `-no-window`; a simulator is booted without opening the Simulator app. The mirror is the only screen. Capturing in the Network panel stops by itself when its device stops.
+
+**Device and Panels menus.** They work on the selected device whether it is a simulator or an emulator, and use the Simulator's shortcuts where it has one:
+
+| Shortcut | Action |
+| --- | --- |
+| ⇧⌘H | Home |
+| ⌃⌘H | App Switcher |
+| ⌘[ | Back (Android) |
+| ⌘L | Lock / power |
+| ⌥⌘↑ / ⌥⌘↓ | Volume up / down |
+| ⌘← / ⌘→ | Rotate left / right (Android emulators) |
+| ⇧⌘A | Toggle dark mode |
+| ⌥⌘= / ⌥⌘- | Larger / smaller text |
+| ⌘S | Screenshot |
+| ⌥⌘R | Start / stop recording |
+| ⌥⌘1 … 4 | Show the mirror, logs, network, tools |
+
 ### Logs
 
 The **Logs** toolbar button opens the selected device's log at the bottom of the right panel: `adb logcat` for Android emulators and phones, `log stream` for simulators (a real iPhone has no log stream Apple exposes outside Console.app). Drag the bar above it to resize, or use the expand button to give the log the whole right panel and hide the tools.
@@ -130,6 +148,10 @@ When an app rejects the BootBar certificate, that host is passed through untouch
 On Android, apps that target Android 7 or later ignore the user certificate store, so only the system store decrypts them all. That needs an emulator image that allows `adb root` (AOSP or Google APIs, not Google Play). BootBar reads the device's state and says so in the setup popover, in a banner above the list ("System trust disabled" with a Trust System-Wide button when the image allows root), and in the helper app. The system certificate lasts until the device restarts. Set Up also puts it in the apps that are already running, and checks that new apps see it.
 
 Limits: HTTP/1.1 only (HTTP/2 and gRPC apps may fail), WebSocket frames are not shown, apps that pin certificates cannot be decrypted, Android apps only trust the user store if they opt in.
+
+### Slow network
+
+The **Network** menu of the Network panel slows the selected device down, with the Network Link Conditioner presets (Wi-Fi, LTE, 3G, Edge, Very Bad Network, Offline) or a custom latency, download and upload speed. An Android emulator is slowed by the emulator itself (`adb emu network speed` and `delay`, airplane mode for Offline), so all its traffic is affected and it works without capturing. Simulators and phones are slowed through the proxy: every request pays the latency, the transfer is limited to the speed, and Offline fails each connection (recorded as a failed request); it applies while capturing. The menu shows the active preset in orange.
 
 ### Keyboard, clipboard and drag & drop
 

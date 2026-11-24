@@ -367,3 +367,15 @@ private func bundleTools(_ runner: MockShellRunner, bundletool: String? = "/bt/b
     try await emulatorTools(runner).rotate(avd, steps: 3)
     #expect(runner.commands.suffix(3) == Array(repeating: "\(adb) emu rotate", count: 3))
 }
+
+@Test func emulatorNetworkIsSlowedThroughTheConsoleAndCutWithAirplaneMode() async throws {
+    let runner = MockShellRunner()
+    try await emulatorTools(runner).setNetwork(avd, NetworkConditions(name: "3G", latencyMs: 100, downKbps: 780, upKbps: 330))
+    #expect(runner.commands == ["\(adb) emu network speed 330:780", "\(adb) emu network delay 100",
+                                "\(adb) shell cmd connectivity airplane-mode disable"])
+    try await emulatorTools(runner).setNetwork(avd, .online)
+    #expect(runner.commands.suffix(3) == ["\(adb) emu network speed full", "\(adb) emu network delay none",
+                                          "\(adb) shell cmd connectivity airplane-mode disable"])
+    try await emulatorTools(runner).setNetwork(avd, .offlineProfile)
+    #expect(runner.commands.last == "\(adb) shell cmd connectivity airplane-mode enable")
+}

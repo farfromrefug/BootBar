@@ -69,8 +69,15 @@ public final class ProxyServer: @unchecked Sendable {
     private var nextFlowId = 1
     private var connections: [ObjectIdentifier: any ByteChannel] = [:]
     private var running = false
+    fileprivate let conditionsBox = ConditionsBox()
 
     public var port: Int { lock.withLock { boundPort } }
+
+    /// A slower or missing network for the clients being inspected; takes effect at once, also for open connections.
+    public var conditions: NetworkConditions {
+        get { conditionsBox.value }
+        set { conditionsBox.value = newValue }
+    }
 
     public init(authority: CertificateAuthority, attribution: any ClientAttributing = LsofAttribution(),
                 options: ProxyOptions = ProxyOptions(), onFlow: @escaping @Sendable (HTTPFlow) -> Void) {
@@ -253,7 +260,15 @@ private final class ProxySession {
         if inspected { server.publish(flow) }
     }
 
+    /// The pause a request or a new connection waits for, and whether the network is down.
+    private func connectionDelays() -> (failed: Bool, latency: TimeInterval) {
+        guard inspected else { return (false, 0) }
+        let limits = server.conditions
+        return (limits.offline, Double(limits.latencyMs) / 1000)
+    }
+
     func run() {
+        if inspected { socket.conditions = server.conditionsBox }
         defer { upstreams.values.forEach { server.untrack($0.channel); $0.channel.close() } }
         let reader = ByteReader(socket)
         do {
@@ -280,6 +295,17 @@ private final class ProxySession {
                             method: "CONNECT", path: "")
         flow.requestHeaders = head.headers
         flow.bodyLimit = options.bodyLimit
+
+        let delays = connectionDelays()
+        if delays.failed {
+            flow.state = .failed
+            flow.error = "Offline: the network conditions are set to no connection"
+            flow.isTunnel = true
+            flow.finishedAt = Date()
+            publish(flow)
+            return
+        }
+        if delays.latency > 0 { Thread.sleep(forTimeInterval: delays.latency) }
 
         guard inspected else {
             tunnel(host: host, port: port, flow: &flow, reason: nil, record: false)
@@ -397,6 +423,13 @@ private final class ProxySession {
         flow.requestHeaders = request.headers
         flow.bodyLimit = options.bodyLimit
         publish(flow)
+
+        let delays = connectionDelays()
+        if delays.failed {
+            fail(&flow, "Offline: the network conditions are set to no connection", client: channel, respondWith: nil)
+            return false
+        }
+        if delays.latency > 0 { Thread.sleep(forTimeInterval: delays.latency) }
 
         // forward in origin form, minus the headers that only concern the proxy
         request.target = path

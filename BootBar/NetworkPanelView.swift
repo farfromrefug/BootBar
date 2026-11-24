@@ -15,6 +15,7 @@ struct NetworkPanelView: View {
     @AppStorage("networkRoutesMac") private var routesMac = true
     @State private var showSetup = false
     @State private var dismissedTrust: Set<String> = []
+    @State private var showCustomConditions = false
     @State private var isAtBottom = true
     @State private var scrollPhase: ScrollPhase = .idle
     @State private var scrollRequest = 0
@@ -58,6 +59,7 @@ struct NetworkPanelView: View {
             captureToggle
             statusText
             Spacer()
+            conditionsMenu
             Button { showSetup.toggle() } label: {
                 Label("Set Up", systemImage: "checklist")
                     .labelStyle(.titleAndIcon).font(.system(size: 11))
@@ -79,6 +81,37 @@ struct NetworkPanelView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
+    }
+
+    // MARK: Network conditions
+
+    private var conditionsMenu: some View {
+        Menu {
+            ForEach(NetworkConditions.presets) { preset in
+                Button {
+                    Task { await model.setConditions(preset) }
+                } label: {
+                    let text = preset.isLimited ? "\(preset.name) · \(preset.summary)" : preset.name
+                    if model.conditions.name == preset.name { Label(text, systemImage: "checkmark") } else { Text(text) }
+                }
+            }
+            Divider()
+            Button("Custom…") { showCustomConditions = true }
+            Divider()
+            Text(model.slowsEmulator ? "The emulator slows down all of its traffic." : "Applies to what goes through the proxy, while capturing.")
+        } label: {
+            Label(model.conditions.isLimited ? model.conditions.name : "Network", systemImage: "gauge.with.dots.needle.33percent")
+                .labelStyle(.titleAndIcon).font(.system(size: 11))
+                .foregroundStyle(model.conditions.isLimited ? Color.orange : Color.secondary)
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help(model.conditions.isLimited ? "Network slowed down: \(model.conditions.name), \(model.conditions.summary)" : "Slow the network down or cut it")
+        .popover(isPresented: $showCustomConditions, arrowEdge: .bottom) {
+            CustomConditionsView(initial: model.conditions) { conditions in
+                showCustomConditions = false
+                Task { await model.setConditions(conditions) }
+            }
+        }
     }
 
     private var captureToggle: some View {
@@ -366,6 +399,52 @@ struct FlowActions: View {
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             try? data.write(to: url)
+        }
+    }
+}
+
+
+/// Latency, download and upload speed of a network of the user's own making.
+private struct CustomConditionsView: View {
+    let apply: (NetworkConditions) -> Void
+    @State private var latency: String
+    @State private var down: String
+    @State private var up: String
+    @State private var offline: Bool
+
+    init(initial: NetworkConditions, apply: @escaping (NetworkConditions) -> Void) {
+        self.apply = apply
+        _latency = State(initialValue: initial.latencyMs > 0 ? String(initial.latencyMs) : "")
+        _down = State(initialValue: initial.downKbps > 0 ? String(initial.downKbps) : "")
+        _up = State(initialValue: initial.upKbps > 0 ? String(initial.upKbps) : "")
+        _offline = State(initialValue: initial.offline)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Custom network").font(.headline)
+            field("Latency", "ms", $latency)
+            field("Download", "kbps", $down)
+            field("Upload", "kbps", $up)
+            Toggle("No connection", isOn: $offline).toggleStyle(.checkbox)
+            Text("Empty means no limit.").font(.system(size: 11)).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Apply") {
+                    apply(NetworkConditions(name: "Custom", latencyMs: Int(latency) ?? 0, downKbps: Int(down) ?? 0,
+                                            upKbps: Int(up) ?? 0, offline: offline))
+                }
+                .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(14).frame(width: 260)
+    }
+
+    private func field(_ title: String, _ unit: String, _ value: Binding<String>) -> some View {
+        HStack {
+            Text(title).frame(width: 70, alignment: .leading)
+            TextField("", text: value).textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing)
+            Text(unit).font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 34, alignment: .leading)
         }
     }
 }

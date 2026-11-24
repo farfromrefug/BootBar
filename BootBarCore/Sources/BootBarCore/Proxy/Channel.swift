@@ -24,6 +24,9 @@ public final class SocketChannel: ByteChannel, @unchecked Sendable {
     public let descriptor: Int32
     private let lock = NSLock()
     private var closed = false
+    /// Slows this connection down; set for the clients being inspected. What the client sends counts as upload,
+    /// what it receives as download.
+    var conditions: ConditionsBox?
 
     public init(descriptor: Int32) {
         self.descriptor = descriptor
@@ -66,7 +69,13 @@ public final class SocketChannel: ByteChannel, @unchecked Sendable {
         var buffer = [UInt8](repeating: 0, count: max)
         while true {
             let count = Darwin.read(descriptor, &buffer, max)
-            if count > 0 { return Data(buffer.prefix(count)) }
+            if count > 0 {
+                // offline is decided per request, where it can be recorded; writes then fail so open tunnels end
+                if let limits = conditions?.value {
+                    Thread.sleep(forTimeInterval: NetworkConditions.delay(bytes: count, kbps: limits.upKbps))
+                }
+                return Data(buffer.prefix(count))
+            }
             if count == 0 { return Data() }
             if errno == EINTR { continue }
             if lock.withLock({ closed }) { return Data() }
@@ -75,6 +84,20 @@ public final class SocketChannel: ByteChannel, @unchecked Sendable {
     }
 
     public func write(_ data: Data) throws {
+        guard let conditions else { return try writeNow(data) }
+        // in pieces, so a big response takes as long as the connection would need
+        var offset = data.startIndex
+        while offset < data.endIndex {
+            let limits = conditions.value
+            if limits.offline { throw ChannelError("offline") }
+            let end = limits.downKbps > 0 ? min(offset + 2048, data.endIndex) : data.endIndex
+            try writeNow(data[offset..<end])
+            Thread.sleep(forTimeInterval: NetworkConditions.delay(bytes: end - offset, kbps: limits.downKbps))
+            offset = end
+        }
+    }
+
+    private func writeNow(_ data: Data) throws {
         try data.withUnsafeBytes { raw in
             var sent = 0
             while sent < raw.count {

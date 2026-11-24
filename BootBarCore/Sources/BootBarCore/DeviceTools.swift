@@ -522,6 +522,17 @@ public struct EmulatorTools: Sendable {
         for _ in 0..<steps { try await adb(device, ["emu", "rotate"]) }
     }
 
+    /// Slows the emulator's own network down (all of its traffic, not only what uses a proxy), or cuts it with
+    /// airplane mode. The emulator console takes `<up>:<down>` in kbps and `<min>:<max>` in milliseconds.
+    public func setNetwork(_ device: Device, _ conditions: NetworkConditions) async throws {
+        let speed = conditions.downKbps > 0 || conditions.upKbps > 0
+            ? "\(conditions.upKbps > 0 ? conditions.upKbps : 1_000_000):\(conditions.downKbps > 0 ? conditions.downKbps : 1_000_000)"
+            : "full"
+        try await adb(device, ["emu", "network", "speed", speed])
+        try await adb(device, ["emu", "network", "delay", conditions.latencyMs > 0 ? "\(conditions.latencyMs)" : "none"])
+        try await adb(device, ["shell", "cmd", "connectivity", "airplane-mode", conditions.offline ? "enable" : "disable"])
+    }
+
     public func setAnimations(_ device: Device, enabled: Bool) async throws {
         for key in ["window_animation_scale", "transition_animation_scale", "animator_duration_scale"] {
             try await adb(device, ["shell", "settings", "put", "global", key, enabled ? "1" : "0"])
