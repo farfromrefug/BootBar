@@ -11,6 +11,8 @@ All notable changes to BootBar are documented here.
 - Start Headless for emulators (`-no-window`) and simulators (the Simulator app stays closed), and Start and Start Headless buttons in the mirror of a stopped device
 - Capturing stops by itself when the captured device stops
 - Device and Panels menus with the Simulator's shortcuts (Home, App Switcher, Lock, rotate, dark mode, text size, screenshot, recording) for simulators and emulators
+- Android rotation goes through the window manager (every app obeys it, and phones can rotate too), the mirror follows the new size, and the window follows the picture; a window made smaller shrinks the picture instead of springing back
+- Fixed: the scrcpy mirror died on the first rotation (the stream's session packet was read as video data)
 - Network: slow the network down (Wi-Fi, LTE, 3G, Edge, Very Bad Network, Offline or custom): emulators through the emulator, simulators and phones through the proxy
 - Network: a small Kotlin helper app (VPN) that points Android devices at the proxy; it connects when BootBar starts capturing and disconnects when it stops, and shows its state
 - Network: iPhones and iPads over Wi-Fi (the proxy listens on the network on request, `http://bootbar.proxy` serves the certificate), and a proxy port setting (automatic by default: 8899, or a free port when taken)

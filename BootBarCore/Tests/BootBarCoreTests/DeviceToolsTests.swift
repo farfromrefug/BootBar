@@ -128,14 +128,12 @@ private let listAppsOutput = """
     let tools = emulatorTools(runner)
     try await tools.setAppearance(avd, dark: false)
     try await tools.setLocation(avd, latitude: 48.85, longitude: 2.35)
-    try await tools.rotate(avd)
     try await tools.setShowTaps(avd, enabled: true)
     try await tools.reboot(avd)
     try await tools.uninstall(avd, app: "com.example")
     #expect(runner.commands == [
         "\(adb) shell cmd uimode night no",
         "\(adb) emu geo fix 2.35 48.85",
-        "\(adb) emu rotate",
         "\(adb) shell settings put system show_touches 1",
         "\(adb) reboot",
         "\(adb) uninstall com.example"])
@@ -360,12 +358,10 @@ private func bundleTools(_ runner: MockShellRunner, bundletool: String? = "/bt/b
     #expect(runner.commands.last == "\(adb) shell settings put system font_scale 1.3")
 }
 
-@Test func simulatorStepsTextSizeAndEmulatorRotatesLeftByThreeSteps() async throws {
+@Test func simulatorStepsTextSize() async throws {
     let runner = MockShellRunner()
     try await simulatorTools(runner).changeTextSize(sim, larger: false)
     #expect(runner.commands.last == "/usr/bin/xcrun simctl ui UDID-1 content_size decrement")
-    try await emulatorTools(runner).rotate(avd, steps: 3)
-    #expect(runner.commands.suffix(3) == Array(repeating: "\(adb) emu rotate", count: 3))
 }
 
 @Test func emulatorNetworkIsSlowedThroughTheConsoleAndCutWithAirplaneMode() async throws {
@@ -378,4 +374,30 @@ private func bundleTools(_ runner: MockShellRunner, bundletool: String? = "/bt/b
                                           "\(adb) shell cmd connectivity airplane-mode disable"])
     try await emulatorTools(runner).setNetwork(avd, .offlineProfile)
     #expect(runner.commands.last == "\(adb) shell cmd connectivity airplane-mode enable")
+}
+
+@Test func androidRotatesAQuarterTurnThroughTheWindowManager() async throws {
+    let window = "\(adb) shell dumpsys window displays | grep -m1 -o 'mRotation=[0-9]'"
+    let runner = MockShellRunner()
+    runner.responses[window] = .success("mRotation=0\n")
+    try await emulatorTools(runner).rotate(avd)
+    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 3")   // clockwise
+    try await emulatorTools(runner).rotate(avd, clockwise: false)
+    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 1")
+
+    runner.responses[window] = .success("mRotation=1\n")   // turned back to portrait: released
+    try await emulatorTools(runner).rotate(avd)
+    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation free")
+    runner.responses[window] = .success("mRotation=3\n")
+    try await emulatorTools(runner).rotate(avd, clockwise: false)
+    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation free")
+}
+
+@Test func androidRotationFallsBackToSettingsOnOldVersions() async throws {
+    let runner = MockShellRunner()
+    runner.responses["\(adb) shell dumpsys window displays | grep -m1 -o 'mRotation=[0-9]'"] = .success("mRotation=0\n")
+    runner.responses["\(adb) shell cmd window user-rotation lock 3"] = .failure(ShellError(command: "cmd", exitCode: 255, stderr: "Can't find service: window"))
+    try await emulatorTools(runner).rotate(avd)
+    #expect(runner.commands.suffix(2) == ["\(adb) shell settings put system accelerometer_rotation 0",
+                                          "\(adb) shell settings put system user_rotation 3"])
 }

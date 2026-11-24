@@ -678,3 +678,15 @@ private func seconds(_ work: () async throws -> Void) async rethrows -> TimeInte
     await model.deviceListChanged([avd.withState(.stopped)])
     #expect(model.conditions == .online)
 }
+
+@MainActor
+@Test func conditionsCanBeSetForADeviceThatIsNotSelected() async throws {
+    let runner = MockShellRunner()
+    let model = NetworkViewModel(runner: runner, makeAuthority: { try makeAuthority() }, locateSDK: { AndroidSDK(root: "/sdk") })
+    let avd = Device(id: "avd", name: "Pixel", platform: .android, osVersion: "API 36", state: .running, serial: "emulator-5554")
+    let edge = NetworkConditions.presets.first { $0.name == "Edge" }!
+    #expect(model.conditions(for: avd) == .online)
+    await model.setConditions(edge, for: avd)
+    #expect(model.conditions(for: avd) == edge)
+    #expect(model.conditions == .online)        // nothing selected: the panel shows nothing
+}

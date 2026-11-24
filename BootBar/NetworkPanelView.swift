@@ -89,7 +89,7 @@ struct NetworkPanelView: View {
         Menu {
             ForEach(NetworkConditions.presets) { preset in
                 Button {
-                    Task { await model.setConditions(preset) }
+                    Task { await model.setConditions(preset, for: device) }
                 } label: {
                     let text = preset.isLimited ? "\(preset.name) · \(preset.summary)" : preset.name
                     if model.conditions.name == preset.name { Label(text, systemImage: "checkmark") } else { Text(text) }
@@ -109,7 +109,7 @@ struct NetworkPanelView: View {
         .popover(isPresented: $showCustomConditions, arrowEdge: .bottom) {
             CustomConditionsView(initial: model.conditions) { conditions in
                 showCustomConditions = false
-                Task { await model.setConditions(conditions) }
+                Task { await model.setConditions(conditions, for: device) }
             }
         }
     }

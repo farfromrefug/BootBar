@@ -53,7 +53,7 @@ struct DeviceManageContent: View {
     @State private var expanded: Set<Section> = []
 
     enum Section: Hashable {
-        case apps, install, url, location, display, capture, camera, tools, device
+        case apps, install, url, location, display, network, capture, camera, tools, device
     }
 
     private var usable: Bool { device.state == .running }
@@ -120,6 +120,9 @@ struct DeviceManageContent: View {
                 CardSection(title: "Display & Developer", systemImage: "paintbrush", isExpanded: binding(.display)) {
                     DisplayToolsView(device: device)
                 }
+            }
+            CardSection(title: "Network", systemImage: "gauge.with.dots.needle.33percent", isExpanded: binding(.network)) {
+                NetworkToolsView(device: device)
             }
             if offers(.screenshot) {
                 CardSection(title: "Capture", systemImage: "camera", isExpanded: binding(.capture)) {
@@ -401,6 +404,56 @@ private struct DisplayToolsView: View {
 
     private func run(_ tool: DeviceTool) {
         Task { await tools.perform(tool, on: device) }
+    }
+}
+
+/// Slows the network of the device down: the same presets as the Network panel.
+private struct NetworkToolsView: View {
+    let device: Device
+    @Environment(NetworkViewModel.self) private var network
+    @State private var latency = ""
+    @State private var down = ""
+    @State private var up = ""
+
+    private var current: NetworkConditions { network.conditions(for: device) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Network").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 74, alignment: .leading)
+                Picker("", selection: Binding(get: { current.name }, set: choose)) {
+                    ForEach(NetworkConditions.presets) { Text($0.name).tag($0.name) }
+                    if !NetworkConditions.presets.contains(where: { $0.name == current.name }) { Text(current.name).tag(current.name) }
+                }
+                .labelsHidden().frame(maxWidth: 190)
+                Spacer(minLength: 0)
+            }
+            Text(current.isLimited ? current.summary : "The network runs at full speed.")
+                .font(.system(size: 11)).foregroundStyle(current.isLimited ? Color.orange : Color.secondary)
+            HStack(spacing: 6) {
+                field("ms", $latency)
+                field("kbps down", $down)
+                field("kbps up", $up)
+                Button("Apply") {
+                    let custom = NetworkConditions(name: "Custom", latencyMs: Int(latency) ?? 0, downKbps: Int(down) ?? 0, upKbps: Int(up) ?? 0)
+                    Task { await network.setConditions(custom, for: device) }
+                }
+                .controlSize(.small)
+            }
+            Text(network.slowsEmulator(device)
+                 ? "The emulator slows down all of its traffic. Offline turns airplane mode on."
+                 : "Applied to what goes through the proxy, so capturing must be on. Offline fails every connection.")
+                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func field(_ title: String, _ value: Binding<String>) -> some View {
+        TextField(title, text: value).textFieldStyle(.roundedBorder).controlSize(.small).multilineTextAlignment(.trailing)
+    }
+
+    private func choose(_ name: String) {
+        guard let preset = NetworkConditions.presets.first(where: { $0.name == name }) else { return }
+        Task { await network.setConditions(preset, for: device) }
     }
 }
 

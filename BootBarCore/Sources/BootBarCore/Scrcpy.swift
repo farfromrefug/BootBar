@@ -79,6 +79,14 @@ struct ScrcpyStreamParser {
             case .packets:
                 guard buffer.count >= Self.packetHeaderLength else { return packets }
                 let header = [UInt8](buffer.prefix(Self.packetHeaderLength))
+                // a session packet announces the new video size, which the device sends when it rotates:
+                // its 12 bytes (flag word, width, height) have no payload
+                if header[0] & 0x80 != 0 {
+                    width = Int(Self.uint32(header, 4))
+                    height = Int(Self.uint32(header, 8))
+                    buffer.removeFirst(Self.packetHeaderLength)
+                    continue
+                }
                 let size = Int(Self.uint32(header, 8))
                 guard size <= Self.maxPacket else { throw ParseError.oversizedPacket(size) }
                 guard buffer.count >= Self.packetHeaderLength + size else { return packets }

@@ -20,6 +20,8 @@ public final class DeviceToolsViewModel {
     public private(set) var appsError: String?
     public private(set) var isWorking = false
     public private(set) var message: Message?
+    /// Called after a device was rotated, so a mirror that does not follow the rotation by itself can restart.
+    public var didRotate: ((Device) -> Void)?
     public private(set) var recordings: [String: String] = [:]
 
     private let runner: any ShellRunner
@@ -202,8 +204,8 @@ public final class DeviceToolsViewModel {
         case .openURL(let url): try await tools.openURL(device, url); return "Opened URL"
         case .install(let source): try await tools.install(device, source: source); return "Installed app"
         case .location(let latitude, let longitude): try await tools.setLocation(device, latitude: latitude, longitude: longitude); return "Location set"
-        case .rotate: try await tools.rotate(device); return nil
-        case .rotateLeft: try await tools.rotate(device, steps: 3); return nil
+        case .rotate: try await tools.rotate(device); didRotate?(device); return nil
+        case .rotateLeft: try await tools.rotate(device, clockwise: false); didRotate?(device); return nil
         case .animations(let enabled): try await tools.setAnimations(device, enabled: enabled); return enabled ? "Animations on" : "Animations off"
         case .showTaps(let enabled): try await tools.setShowTaps(device, enabled: enabled); return enabled ? "Showing taps" : "Taps hidden"
         case .reboot: try await tools.reboot(device); return "Rebooting"

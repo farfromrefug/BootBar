@@ -88,6 +88,7 @@ struct HubView: View {
         .focusedSceneValue(\.hubActions, HubActions(device: selected, isRecording: selected.map { tools.isRecording($0) } ?? false,
                                                    perform: { perform($0) }))
         .onChange(of: router.selection) { _, _ in creating = nil }
+        .onAppear { tools.didRotate = { mirror.restartAfterRotation(of: $0) } }
         .onChange(of: list.iosDevices + list.androidDevices + list.physicalDevices) { _, devices in
             Task { await network.deviceListChanged(devices) }
         }
@@ -219,10 +220,22 @@ struct HubView: View {
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
-                .onChange(of: FitKey(width: geometry.size.width, mirror: mirrorWidth, inspector: showInspector, showsMirror: showMirror)) { _, key in
-                    scheduleFit(detailWidth: key.width, mirrorWidth: key.mirror)
+                // a window the user makes smaller just shrinks the picture: only these changes resize it by themselves
+                .onChange(of: FitKey(deviceId: device.id, inspector: showInspector, showsMirror: showMirror)) { _, _ in
+                    fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size)
+                        + (showInspector ? Self.inspectorMin : 0), exactly: !showInspector)
                 }
-                .onAppear { scheduleFit(detailWidth: geometry.size.width, mirrorWidth: mirrorWidth) }
+                // the picture turned (portrait to landscape or back): the window follows, the tools panel keeps its width
+                .onChange(of: aspect) { old, new in
+                    let was = min(desiredMirrorWidth(for: device, in: geometry.size, aspect: old), mirrorLimit(in: geometry.size))
+                    let inspector = showInspector ? max(geometry.size.width - was, Self.inspectorMin) : 0
+                    fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size, aspect: new) + inspector,
+                        exactly: true)
+                }
+                .onAppear {
+                    fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size)
+                        + (showInspector ? Self.inspectorMin : 0), exactly: !showInspector)
+                }
             }
             .task(id: LogKey(deviceId: device.id, running: device.state == .running,
                              visible: logMode != .hidden && panelKind == .logs && (showInspector || !showMirror))) {
@@ -339,37 +352,44 @@ struct HubView: View {
     static let barHeight: CGFloat = 36
 
     private struct FitKey: Equatable {
-        let width: CGFloat
-        let mirror: CGFloat
+        let deviceId: String
         let inspector: Bool
         let showsMirror: Bool
     }
 
-    /// The picture is as wide as its height allows, so the column never shows black bars.
-    private func mirrorColumnWidth(for device: Device, in size: CGSize) -> CGFloat {
+    /// How wide the picture wants its column: as wide as its height allows, so there are no black bars.
+    private func desiredMirrorWidth(for device: Device, in size: CGSize, aspect: CGFloat? = nil) -> CGFloat {
         let bar = (device.platform == .android || !device.isPhysical) ? Self.barHeight : 0
-        let width = max(max(size.height - bar, 120) * aspect, 240)
+        let width = max(max(size.height - bar, 120) * (aspect ?? self.aspect), 240)
         let screenWidth = window?.screen?.visibleFrame.width ?? 1600
         let room = screenWidth - 260 - (showInspector ? Self.inspectorMin : 0)
         return min(width, max(room, 200))
     }
 
-    /// Resizes the window so the middle column hugs the picture and the tools panel keeps at least its minimum width.
-    private func scheduleFit(detailWidth: CGFloat, mirrorWidth: CGFloat) {
+    /// The most the column can take without pushing the tools panel out of the window.
+    private func mirrorLimit(in size: CGSize) -> CGFloat {
+        max(size.width - (showInspector ? Self.inspectorMin : 0), 200)
+    }
+
+    /// What the column gets: the picture's width, or what the window leaves it; the picture then has bars.
+    private func mirrorColumnWidth(for device: Device, in size: CGSize) -> CGFloat {
+        min(desiredMirrorWidth(for: device, in: size), mirrorLimit(in: size))
+    }
+
+    /// Resizes the window so the detail area is `target` wide: exactly, or at least.
+    private func fit(_ device: Device, detailWidth: CGFloat, to target: CGFloat, exactly: Bool) {
         fitTask?.cancel()
         guard showMirror else { return }
         fitTask = Task {
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled, let window, !window.styleMask.contains(.fullScreen) else { return }
-            // the tools panel may take any extra width; only the picture column and a hidden panel are pinned
-            let lower = showInspector ? mirrorWidth + Self.inspectorMin : mirrorWidth
-            let upper = showInspector ? CGFloat.infinity : mirrorWidth
-            let delta = min(max(detailWidth, lower), upper) - detailWidth
+            let delta = (exactly ? target : max(detailWidth, target)) - detailWidth
             guard abs(delta) > 1.5 else { return }
             var frame = window.frame
             frame.size.width += delta
-            if let visible = window.screen?.visibleFrame, frame.maxX > visible.maxX {
-                frame.origin.x = max(visible.minX, visible.maxX - frame.width)
+            if let visible = window.screen?.visibleFrame {
+                frame.size.width = min(frame.width, visible.width)
+                if frame.maxX > visible.maxX { frame.origin.x = max(visible.minX, visible.maxX - frame.width) }
             }
             window.setFrame(frame, display: true, animate: false)
         }

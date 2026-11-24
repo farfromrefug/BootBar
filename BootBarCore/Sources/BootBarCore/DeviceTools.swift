@@ -59,7 +59,7 @@ public enum DeviceTool: Sendable, Equatable {
         case (.ios, .screenshot), (.ios, .startRecording), (.ios, .stopRecording), (.ios, .install),
              (.ios, .launch), (.ios, .uninstall): return true
         case (.ios, _): return false
-        case (.android, .location), (.android, .rotate), (.android, .rotateLeft), (.android, .revealStorage),
+        case (.android, .location), (.android, .revealStorage),
              (.android, .startRecording), (.android, .stopRecording): return false
         case (.android, _): return isSupported(on: .android)
         }
@@ -518,8 +518,27 @@ public struct EmulatorTools: Sendable {
         try await adb(device, ["emu", "geo", "fix", "\(longitude)", "\(latitude)"])
     }
 
-    public func rotate(_ device: Device, steps: Int = 1) async throws {
-        for _ in 0..<steps { try await adb(device, ["emu", "rotate"]) }
+    /// Turns the screen a quarter turn through the window manager, which every app obeys. (The emulator's own
+    /// `rotate` only moves its virtual sensor: nothing happens on a home screen that does not follow it, or when
+    /// auto-rotate is off, and it does not exist on a phone.) Back in portrait the rotation is released again.
+    public func rotate(_ device: Device, clockwise: Bool = true) async throws {
+        let next = (try await currentRotation(device) + (clockwise ? 3 : 1)) % 4
+        do {
+            try await adb(device, ["shell", "cmd", "window", "user-rotation", next == 0 ? "free" : "lock", next == 0 ? "" : String(next)]
+                .filter { !$0.isEmpty })
+        } catch {
+            // Android 10 and earlier have no such command
+            try await adb(device, ["shell", "settings", "put", "system", "accelerometer_rotation", next == 0 ? "1" : "0"])
+            try await adb(device, ["shell", "settings", "put", "system", "user_rotation", String(next)])
+        }
+    }
+
+    /// 0 portrait, 1 turned counterclockwise, 2 upside down, 3 turned clockwise.
+    func currentRotation(_ device: Device) async throws -> Int {
+        let window = (try? await adb(device, ["shell", "dumpsys window displays | grep -m1 -o 'mRotation=[0-9]'"])) ?? ""
+        if let digit = window.split(separator: "=").last.flatMap({ Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }) { return digit }
+        let setting = (try? await adb(device, ["shell", "settings", "get", "system", "user_rotation"])) ?? ""
+        return Int(setting.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
     }
 
     /// Slows the emulator's own network down (all of its traffic, not only what uses a proxy), or cuts it with

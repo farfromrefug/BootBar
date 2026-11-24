@@ -62,6 +62,19 @@ final class MirrorController {
         }
     }
 
+    /// The adb stream (`screenrecord`) keeps recording at the size it started with, so a rotation needs a new one.
+    /// scrcpy announces the new size itself.
+    func restartAfterRotation(of rotated: Device) {
+        guard engine == "adb", device?.id == rotated.id else { return }
+        let token = generation
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard let self, self.generation == token else { return }
+            self.stop()
+            self.start(rotated)
+        }
+    }
+
     func stop() {
         generation += 1
         android?.stop()

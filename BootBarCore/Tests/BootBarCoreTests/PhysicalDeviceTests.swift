@@ -93,7 +93,7 @@ private let noNamer = CaptureNamer(now: { Date(timeIntervalSince1970: 0) }, prep
     let android = Device(id: "S", name: "Phone", platform: .android, osVersion: "Android 14", state: .running,
                          serial: "S", isPhysical: true)
     #expect(!DeviceTool.location(latitude: 0, longitude: 0).isSupported(for: android))
-    #expect(!DeviceTool.rotate.isSupported(for: android))
+    #expect(DeviceTool.rotate.isSupported(for: android))
     #expect(DeviceTool.screenshot.isSupported(for: android))
     #expect(DeviceTool.install("x").isSupported(for: android))
     #expect(!DeviceTool.appearance(dark: true).isSupported(for: phone))

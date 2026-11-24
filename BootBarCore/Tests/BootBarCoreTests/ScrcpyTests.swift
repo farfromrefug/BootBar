@@ -73,3 +73,15 @@ private func packet(_ payload: [UInt8], flags: UInt8 = 0) -> Data {
     #expect(install == ScrcpyInstall(serverPath: "/opt/homebrew/share/scrcpy/scrcpy-server", version: "3.3.3"))
     #expect(await ScrcpyInstall.locate(runner: runner, exists: { _ in false }, environment: [:]) == nil)
 }
+
+@Test func streamParserSkipsTheSessionPacketARotationSends() throws {
+    var parser = ScrcpyStreamParser()
+    let first: [UInt8] = [0, 0, 0, 1, 0x65, 1]
+    let second: [UInt8] = [0, 0, 0, 1, 0x65, 2]
+    // 0x80 in the first byte: a session packet, then width and height; no payload follows
+    let session = Data([0x80, 0, 0, 0] + be32(2400) + be32(1080))
+    let packets = try parser.push(handshake() + packet(first) + session + packet(second))
+    #expect(packets == [Data(first), Data(second)])
+    #expect(parser.width == 2400)
+    #expect(parser.height == 1080)
+}

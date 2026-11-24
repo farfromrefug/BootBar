@@ -112,7 +112,7 @@ The window icon in the panel header (or **Open in the BootBar window** on a devi
 | ⌘[ | Back (Android) |
 | ⌘L | Lock / power |
 | ⌥⌘↑ / ⌥⌘↓ | Volume up / down |
-| ⌘← / ⌘→ | Rotate left / right (Android emulators) |
+| ⌘← / ⌘→ | Rotate left / right (Android) |
 | ⇧⌘A | Toggle dark mode |
 | ⌥⌘= / ⌥⌘- | Larger / smaller text |
 | ⌘S | Screenshot |
@@ -151,7 +151,7 @@ Limits: HTTP/1.1 only (HTTP/2 and gRPC apps may fail), WebSocket frames are not 
 
 ### Slow network
 
-The **Network** menu of the Network panel slows the selected device down, with the Network Link Conditioner presets (Wi-Fi, LTE, 3G, Edge, Very Bad Network, Offline) or a custom latency, download and upload speed. An Android emulator is slowed by the emulator itself (`adb emu network speed` and `delay`, airplane mode for Offline), so all its traffic is affected and it works without capturing. Simulators and phones are slowed through the proxy: every request pays the latency, the transfer is limited to the speed, and Offline fails each connection (recorded as a failed request); it applies while capturing. The menu shows the active preset in orange.
+The **Network** menu of the Network panel slows the selected device down, with the Network Link Conditioner presets (Wi-Fi, LTE, 3G, Edge, Very Bad Network, Offline) or a custom latency, download and upload speed. An Android emulator is slowed by the emulator itself (`adb emu network speed` and `delay`, airplane mode for Offline), so all its traffic is affected and it works without capturing. Simulators and phones are slowed through the proxy: every request pays the latency, the transfer is limited to the speed, and Offline fails each connection (recorded as a failed request); it applies while capturing. The menu shows the active preset in orange. The **Network** section of the tools panel has the same presets and custom values, for a device whose Network panel is closed.
 
 ### Keyboard, clipboard and drag & drop
 

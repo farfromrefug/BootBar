@@ -36,6 +36,7 @@ struct BootBarApp: App {
                 .environment(managementModel)
                 .environment(cameraModel)
                 .environment(hubRouter)
+                .environment(networkModel)
                 .frame(width: 340, height: 560)
         } label: {
             MenuBarLabel(center: installCenter)
