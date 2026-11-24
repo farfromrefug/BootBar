@@ -10,6 +10,9 @@ struct HubView: View {
     @Environment(InstallRequestCenter.self) private var installs
     @AppStorage("hubShowsMirror") private var showMirror = true
     @AppStorage("hubShowsInspector") private var showInspector = true
+    @AppStorage("hubLogMode") private var logModeRaw = LogPanelMode.hidden.rawValue
+    @AppStorage("hubLogHeight") private var logHeight = 280.0
+    @State private var logs = LogViewModel { Preferences.locateSDK() }
     @State private var dropTargeted = false
     @State private var window: NSWindow?
     @State private var fitTask: Task<Void, Never>?
@@ -49,6 +52,13 @@ struct HubView: View {
                 .help("Show the live screen of the selected device")
             }
             ToolbarItem {
+                Toggle(isOn: Binding(get: { logMode != .hidden && showInspector }, set: toggleLogs)) {
+                    Label("Logs", systemImage: "text.alignleft")
+                }
+                .toggleStyle(.button)
+                .help("Show the log of the selected device")
+            }
+            ToolbarItem {
                 Toggle(isOn: $showInspector) {
                     Label("Tools", systemImage: "sidebar.right")
                 }
@@ -69,7 +79,10 @@ struct HubView: View {
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
         }
-        .onDisappear { NSApp.setActivationPolicy(.accessory) }
+        .onDisappear {
+            NSApp.setActivationPolicy(.accessory)
+            logs.stop()
+        }
         .sheet(item: Binding(get: { installs.pending.map(PendingInstall.init) }, set: { if $0 == nil { installs.pending = nil } })) {
             InstallRequestSheet(request: $0.request) { installs.pending = nil }
         }
@@ -156,9 +169,21 @@ struct HubView: View {
                     }
                     if showInspector || !showMirror {
                         VStack(spacing: 0) {
-                            header(device)
-                            Divider()
-                            DeviceManageContent(device: device, onGone: { router.selection = nil })
+                            if logMode != .full {
+                                header(device)
+                                Divider()
+                                DeviceManageContent(device: device, onGone: { router.selection = nil })
+                            }
+                            if logMode != .hidden {
+                                if logMode == .split {
+                                    LogResizeHandle(height: $logHeight, available: geometry.size.height)
+                                }
+                                LogPanelView(device: device, model: logs, isFull: logMode == .full,
+                                             onToggleFull: { logModeRaw = (logMode == .full ? LogPanelMode.split : .full).rawValue },
+                                             onClose: { logModeRaw = LogPanelMode.hidden.rawValue })
+                                    .frame(height: logMode == .split ? min(logHeight, max(geometry.size.height - 160, 120)) : nil)
+                                    .frame(maxHeight: logMode == .full ? .infinity : nil)
+                            }
                         }
                         .frame(minWidth: Self.inspectorMin, maxWidth: .infinity)
                         .background(.background.secondary)
@@ -169,6 +194,14 @@ struct HubView: View {
                     scheduleFit(detailWidth: key.width, mirrorWidth: key.mirror)
                 }
                 .onAppear { scheduleFit(detailWidth: geometry.size.width, mirrorWidth: mirrorWidth) }
+            }
+            .task(id: LogKey(deviceId: device.id, running: device.state == .running,
+                             visible: logMode != .hidden && (showInspector || !showMirror))) {
+                if device.state == .running, logMode != .hidden, showInspector || !showMirror {
+                    logs.start(device)
+                } else {
+                    logs.stop()
+                }
             }
             .onChange(of: mirror.frameSize) { _, size in
                 if let size, size.width > 0, size.height > 0 { aspect = size.width / size.height }
@@ -215,6 +248,23 @@ struct HubView: View {
                     try? await Task.sleep(for: .seconds(message.isError ? 8 : 4))
                     if tools.message == message { tools.dismissMessage() }
                 }
+        }
+    }
+
+    private var logMode: LogPanelMode { LogPanelMode(rawValue: logModeRaw) ?? .hidden }
+
+    private struct LogKey: Equatable {
+        let deviceId: String
+        let running: Bool
+        let visible: Bool
+    }
+
+    private func toggleLogs(_ on: Bool) {
+        if on {
+            showInspector = true
+            logModeRaw = (logMode == .hidden ? LogPanelMode.split : logMode).rawValue
+        } else {
+            logModeRaw = LogPanelMode.hidden.rawValue
         }
     }
 

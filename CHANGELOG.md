@@ -20,6 +20,8 @@ All notable changes to BootBar are documented here.
 - 60 fps simulator mirror from Baguette's H.264 stream, with screenshot polling as the fallback
 - Touch, keyboard and buttons for the simulator mirror through Baguette, healing Xcode 27's Device Hub input shadowing first
 - Choose the terminal for Shell and Logs (Terminal, iTerm2, Ghostty, kitty, WezTerm, Alacritty, Warp or any other)
+- Log panel in the BootBar window: live logcat and simulator logs with search, regular expressions, level and app filters, pause, follow and copy, resizable or full height
+- Settings are split into General, Android and Mirror tabs so the window fits on screen
 - Delete a device from its row menu, with confirmation
 - scrcpy-server engine for the Android mirror (low latency, live touch and drag) with automatic fallback to `screenrecord`
 - Install `.aab` and `.apks` on Android through bundletool

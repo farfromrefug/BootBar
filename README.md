@@ -101,6 +101,14 @@ The window icon in the panel header (or **Open in the BootBar window** on a devi
 
 `brew install scrcpy` switches the window to scrcpy's server automatically (BootBar talks to it directly, no scrcpy window opens). **Tools → scrcpy** still opens scrcpy's own window. While the window is open BootBar also shows in the Dock.
 
+### Logs
+
+The **Logs** toolbar button opens the selected device's log at the bottom of the right panel: `adb logcat` for Android emulators and phones, `log stream` for simulators (a real iPhone has no log stream Apple exposes outside Console.app). Drag the bar above it to resize, or use the expand button to give the log the whole right panel and hide the tools.
+
+- Search by text or regular expression (matches message, tag and app), filter by minimum level, and filter by one or several apps; right-click a line to show or hide its app.
+- Android package names are resolved from the process list; simulators report the executable name.
+- Pause keeps collecting without scrolling, Follow sticks to the newest line, Copy puts the visible lines on the clipboard. The last 50,000 lines are kept.
+
 ### Keyboard, clipboard and drag & drop
 
 - **Keyboard** (Android): click the picture and type. Text, Return, Delete, Tab, arrows and Esc (Back) go to the device; Cmd+C / X / A / V copy, cut, select all and paste. With the adb fallback engine only typing and special keys work.
