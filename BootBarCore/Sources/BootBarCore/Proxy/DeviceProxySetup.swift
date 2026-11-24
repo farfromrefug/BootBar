@@ -101,7 +101,7 @@ public struct DeviceProxySetup: Sendable {
 
         _ = try await adb(device, ["push", authority.certificatePath, "/sdcard/Download/BootBar-CA.crt"])
         _ = try? await adb(device, ["shell", "am", "start", "-a", "android.settings.SECURITY_SETTINGS"])
-        return "This device cannot trust the certificate for every app (it cannot be rooted). BootBar-CA.crt is in Downloads: install it in Settings → Security → Encryption & credentials → Install a certificate → CA certificate. Browsers and apps that allow user certificates will then be decrypted."
+        return "This device cannot be rooted (a Google Play image), so BootBar-CA.crt can only go in the user store: install it in Settings → Security → Encryption & credentials → Install a certificate → CA certificate. Browsers will be decrypted, but most apps ignore the user store and fail with \"Trust anchor for certification path not found\". To decrypt every app, use an emulator with an AOSP or Google APIs image (not Google Play): Set Up then trusts the certificate system-wide. For your own app, add <debug-overrides><trust-anchors><certificates src=\"user\"/></trust-anchors></debug-overrides> to its network security config. Stop Routing gives the other apps their network back."
     }
 
     private func subjectHash() async throws -> String {

@@ -106,6 +106,7 @@ public final class NetworkViewModel {
                 try await systemProxy.enable(port: server.port)
                 isRoutingMac = true
             }
+            await refreshDeviceState()
         } catch {
             server?.stop()
             server = nil
@@ -145,6 +146,10 @@ public final class NetworkViewModel {
         }
         configuredAndroid = [:]
         if isRunning { state = .stopped }
+    }
+
+    public func dismissSetupMessage() {
+        setupMessage = nil
     }
 
     public func clear() {
@@ -204,8 +209,11 @@ public final class NetworkViewModel {
         var state = DeviceProxyState(certificateInstalled: setup.isCertificateInstalled(on: device))
         switch (device.platform, device.isPhysical) {
         case (.ios, false): state.proxyConfigured = isRoutingMac
-        case (.android, _): state.proxyConfigured = await setup.isAndroidProxyEnabled(on: device, port: port)
-        case (.ios, true): state = phoneState()
+        case (.android, _):
+            state.proxyConfigured = await setup.isAndroidProxyEnabled(on: device, port: port)
+            // a certificate in the user store cannot be seen from here, but decrypted traffic proves it works
+            state = merging(state, evidence: trafficEvidence())
+        case (.ios, true): state = merging(state, evidence: trafficEvidence())
         }
         deviceState = state
     }
@@ -225,7 +233,12 @@ public final class NetworkViewModel {
         guard isRunning, let authority else { return }
         let setup = DeviceProxySetup(runner: runner, sdk: locateSDK(), authority: authority)
         do {
-            if !setup.isCertificateInstalled(on: device) { setupMessage = try await setup.installCertificate(on: device) }
+            do {
+                if !setup.isCertificateInstalled(on: device) { setupMessage = try await setup.installCertificate(on: device) }
+            } catch {
+                // the proxy setting is still worth applying: plain HTTP works without the certificate
+                setupMessage = ErrorMessage.friendly(error)
+            }
             if device.platform == .android {
                 try await setup.enableAndroidProxy(on: device, port: port)
                 configuredAndroid[device.id] = device
@@ -317,8 +330,11 @@ public final class NetworkViewModel {
             appCounts = flows.reduce(into: [:]) { $0[$1.appName, default: 0] += 1 }
             refilterNow()
         }
-        if let device, device.platform == .ios, device.isPhysical, !(deviceState.proxyConfigured && deviceState.certificateInstalled) {
-            deviceState = phoneState()
+        if device != nil, !(deviceState.proxyConfigured && deviceState.certificateInstalled) {
+            let before = deviceState
+            deviceState = merging(deviceState, evidence: trafficEvidence())
+            // the manual steps worked: their instructions are no longer needed
+            if deviceState != before, deviceState.proxyConfigured, deviceState.certificateInstalled { setupMessage = nil }
         }
         totalCount = flows.count
         apps = appCounts.map { AppCount(name: $0.key, count: $0.value) }.sorted { $0.name < $1.name }
@@ -345,11 +361,24 @@ public final class NetworkViewModel {
         visible.insert(flow, at: position)
     }
 
-    /// A phone's setup cannot be checked from here; it is done once its traffic arrives, decrypted.
-    private func phoneState() -> DeviceProxyState {
-        var state = DeviceProxyState()
-        state.proxyConfigured = flows.contains { $0.client.remoteAddress != nil }
-        state.certificateInstalled = flows.contains { $0.client.remoteAddress != nil && $0.isHTTPS && !$0.isTunnel && $0.status != nil }
+    /// What the traffic seen so far says about the selected device, for setups that cannot be checked directly:
+    /// phones and the user certificate store of Android.
+    private func trafficEvidence() -> (seen: Bool, decrypted: Bool) {
+        guard let device else { return (false, false) }
+        let isDevice: (HTTPFlow) -> Bool
+        switch (device.platform, device.isPhysical) {
+        case (.ios, true): isDevice = { $0.client.remoteAddress != nil }
+        case (.android, _): isDevice = { $0.client.app == "Android (adb)" || $0.client.app == "Android emulator" }
+        default: return (false, false)
+        }
+        let mine = flows.filter(isDevice)
+        return (!mine.isEmpty, mine.contains { $0.isHTTPS && !$0.isTunnel && $0.status != nil })
+    }
+
+    private func merging(_ state: DeviceProxyState, evidence: (seen: Bool, decrypted: Bool)) -> DeviceProxyState {
+        var state = state
+        state.proxyConfigured = state.proxyConfigured || evidence.seen
+        state.certificateInstalled = state.certificateInstalled || evidence.decrypted
         return state
     }
 

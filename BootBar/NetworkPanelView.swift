@@ -183,15 +183,26 @@ struct NetworkPanelView: View {
 
     @ViewBuilder
     private var banner: some View {
-        let notReady = model.isRunning && !(model.deviceState.certificateInstalled && model.deviceState.proxyConfigured)
-        if notReady || model.setupMessage != nil {
+        if let message = model.setupMessage {
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                Text(model.setupMessage ?? "\(device.name) is not sending its traffic here yet.")
-                    .font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading)
-                if model.setupMessage == nil {
-                    Button("Set Up") { Task { await model.setUp(device) } }.controlSize(.small).disabled(model.isWorking)
+                Image(systemName: "info.circle.fill").foregroundStyle(.blue)
+                Text(message).font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                Button { model.dismissSetupMessage() } label: {
+                    Image(systemName: "xmark").foregroundStyle(.secondary)
                 }
+                .buttonStyle(.plain).help("Hide")
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(.blue.opacity(0.10))
+            Divider()
+        }
+        if model.isRunning, !model.deviceState.proxyConfigured {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text("\(device.name) is not sending its traffic here yet.")
+                    .font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading)
+                Button("Set Up") { Task { await model.setUp(device) } }.controlSize(.small).disabled(model.isWorking)
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
             .background(.orange.opacity(0.12))
