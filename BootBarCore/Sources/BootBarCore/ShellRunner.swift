@@ -190,3 +190,69 @@ public struct ProcessShellRunner: ShellRunner {
         ([executable] + arguments).joined(separator: " ")
     }
 }
+
+/// Long-running process whose stdout is consumed incrementally (a video stream, for instance).
+public protocol ByteStreaming: Sendable {
+    /// Yields stdout chunks until the process exits. Cancelling the consumer terminates the process.
+    func stream(_ executable: String, _ arguments: [String]) -> AsyncThrowingStream<Data, Error>
+}
+
+public struct ProcessByteStreamer: ByteStreaming {
+    public init() {}
+
+    public func stream(_ executable: String, _ arguments: [String]) -> AsyncThrowingStream<Data, Error> {
+        AsyncThrowingStream { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: executable)
+            process.arguments = arguments
+            process.standardInput = FileHandle.nullDevice
+            let stdout = Pipe()
+            let stderr = Pipe()
+            process.standardOutput = stdout
+            process.standardError = stderr
+
+            let captured = OutputBuffer()
+            stderr.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty { handle.readabilityHandler = nil } else { captured.append(chunk) }
+            }
+            // The stream ends at EOF rather than at process exit, so no buffered output is lost.
+            stdout.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if !chunk.isEmpty {
+                    continuation.yield(chunk)
+                    return
+                }
+                handle.readabilityHandler = nil
+                process.waitUntilExit()
+                if process.terminationStatus == 0 || process.terminationReason == .uncaughtSignal {
+                    continuation.finish()
+                } else {
+                    continuation.finish(throwing: ShellError(
+                        command: Self.describe(executable, arguments),
+                        exitCode: process.terminationStatus, stderr: captured.text))
+                }
+            }
+            continuation.onTermination = { _ in
+                stdout.fileHandleForReading.readabilityHandler = nil
+                if process.isRunning { process.terminate() }
+            }
+            do {
+                try process.run()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+
+    /// Runs to completion and returns raw stdout (images, for example).
+    public func collect(_ executable: String, _ arguments: [String]) async throws -> Data {
+        var data = Data()
+        for try await chunk in stream(executable, arguments) { data.append(chunk) }
+        return data
+    }
+
+    private static func describe(_ executable: String, _ arguments: [String]) -> String {
+        ([executable] + arguments).joined(separator: " ")
+    }
+}
