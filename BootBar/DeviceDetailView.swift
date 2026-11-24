@@ -53,7 +53,7 @@ struct DeviceManageContent: View {
     @State private var expanded: Set<Section> = []
 
     enum Section: Hashable {
-        case apps, install, url, location, display, capture, tools, device
+        case apps, install, url, location, display, capture, camera, tools, device
     }
 
     private var usable: Bool { device.state == .running }
@@ -124,6 +124,11 @@ struct DeviceManageContent: View {
             if offers(.screenshot) {
                 CardSection(title: "Capture", systemImage: "camera", isExpanded: binding(.capture)) {
                     CaptureToolsView(device: device)
+                }
+            }
+            if device.platform == .ios && !device.isPhysical {
+                CardSection(title: "Camera", systemImage: "video", isExpanded: binding(.camera)) {
+                    CameraToolsView(device: device)
                 }
             }
             if offers(.logs, .shell, .revealStorage, .scrcpy, .reboot) {
