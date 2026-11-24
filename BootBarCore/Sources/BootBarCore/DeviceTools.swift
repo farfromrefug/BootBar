@@ -522,7 +522,9 @@ public struct EmulatorTools: Sendable {
     /// `rotate` only moves its virtual sensor: nothing happens on a home screen that does not follow it, or when
     /// auto-rotate is off, and it does not exist on a phone.) Back in portrait the rotation is released again.
     public func rotate(_ device: Device, clockwise: Bool = true) async throws {
-        let next = (try await currentRotation(device) + (clockwise ? 3 : 1)) % 4
+        var next = (try await currentRotation(device) + (clockwise ? 3 : 1)) % 4
+        // a phone does not turn upside down (only a tablet does): skip that step
+        if next == 2 { next = clockwise ? 1 : 3 }
         do {
             try await adb(device, ["shell", "cmd", "window", "user-rotation", next == 0 ? "free" : "lock", next == 0 ? "" : String(next)]
                 .filter { !$0.isEmpty })
@@ -535,8 +537,10 @@ public struct EmulatorTools: Sendable {
 
     /// 0 portrait, 1 turned counterclockwise, 2 upside down, 3 turned clockwise.
     func currentRotation(_ device: Device) async throws -> Int {
-        let window = (try? await adb(device, ["shell", "dumpsys window displays | grep -m1 -o 'mRotation=[0-9]'"])) ?? ""
-        if let digit = window.split(separator: "=").last.flatMap({ Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }) { return digit }
+        // the display manager's view of the screen, which follows what apps really show (`mRotation` in the window
+        // dump does not: its first match is not the default display)
+        let display = (try? await adb(device, ["shell", "dumpsys display | grep -m1 -o 'mCurrentOrientation=[0-9]'"])) ?? ""
+        if let digit = display.split(separator: "=").last.flatMap({ Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }) { return digit }
         let setting = (try? await adb(device, ["shell", "settings", "get", "system", "user_rotation"])) ?? ""
         return Int(setting.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
     }

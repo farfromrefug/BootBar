@@ -215,28 +215,30 @@ struct HubView: View {
                                     .frame(maxHeight: logMode == .full ? .infinity : nil)
                             }
                         }
-                        .frame(minWidth: Self.inspectorMin, maxWidth: .infinity)
+                        .frame(minWidth: inspectorMin, maxWidth: .infinity)
                         .background(.background.secondary)
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
                 // a window the user makes smaller just shrinks the picture: only these changes resize it by themselves
-                .onChange(of: FitKey(deviceId: device.id, inspector: showInspector, showsMirror: showMirror)) { _, _ in
+                .onChange(of: FitKey(deviceId: device.id, inspector: showInspector, showsMirror: showMirror, panel: logMode != .hidden)) { _, _ in
                     fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size)
-                        + (showInspector ? Self.inspectorMin : 0), exactly: !showInspector)
+                        + (showInspector ? inspectorMin : 0), exactly: !showInspector)
                 }
                 // the picture turned (portrait to landscape or back): the window follows, the tools panel keeps its width
                 .onChange(of: aspect) { old, new in
                     let was = min(desiredMirrorWidth(for: device, in: geometry.size, aspect: old), mirrorLimit(in: geometry.size))
-                    let inspector = showInspector ? max(geometry.size.width - was, Self.inspectorMin) : 0
+                    let inspector = showInspector ? max(geometry.size.width - was, inspectorMin) : 0
                     fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size, aspect: new) + inspector,
                         exactly: true)
                 }
                 .onAppear {
                     fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size)
-                        + (showInspector ? Self.inspectorMin : 0), exactly: !showInspector)
+                        + (showInspector ? inspectorMin : 0), exactly: !showInspector)
                 }
             }
+            // narrower than this, the picture or the tools column would be pushed out of the window
+            .frame(minWidth: (showMirror ? 200 : 0) + (showInspector || !showMirror ? inspectorMin : 0))
             .task(id: LogKey(deviceId: device.id, running: device.state == .running,
                              visible: logMode != .hidden && panelKind == .logs && (showInspector || !showMirror))) {
                 if device.state == .running, logMode != .hidden, panelKind == .logs, showInspector || !showMirror {
@@ -347,7 +349,8 @@ struct HubView: View {
         }
     }
 
-    private static let inspectorMin: CGFloat = 340
+    /// What the tools column needs: its cards fit in 340, but the logs and network tables need room for their columns.
+    private var inspectorMin: CGFloat { logMode != .hidden && (showInspector || !showMirror) ? 640 : 340 }
     /// Height of the button strip under the picture; it is part of the column but not of the picture.
     static let barHeight: CGFloat = 36
 
@@ -355,6 +358,7 @@ struct HubView: View {
         let deviceId: String
         let inspector: Bool
         let showsMirror: Bool
+        let panel: Bool
     }
 
     /// How wide the picture wants its column: as wide as its height allows, so there are no black bars.
@@ -362,13 +366,13 @@ struct HubView: View {
         let bar = (device.platform == .android || !device.isPhysical) ? Self.barHeight : 0
         let width = max(max(size.height - bar, 120) * (aspect ?? self.aspect), 240)
         let screenWidth = window?.screen?.visibleFrame.width ?? 1600
-        let room = screenWidth - 260 - (showInspector ? Self.inspectorMin : 0)
+        let room = screenWidth - 260 - (showInspector ? inspectorMin : 0)
         return min(width, max(room, 200))
     }
 
     /// The most the column can take without pushing the tools panel out of the window.
     private func mirrorLimit(in size: CGSize) -> CGFloat {
-        max(size.width - (showInspector ? Self.inspectorMin : 0), 200)
+        max(size.width - (showInspector ? inspectorMin : 0), 200)
     }
 
     /// What the column gets: the picture's width, or what the window leaves it; the picture then has bars.

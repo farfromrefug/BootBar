@@ -377,27 +377,38 @@ private func bundleTools(_ runner: MockShellRunner, bundletool: String? = "/bt/b
 }
 
 @Test func androidRotatesAQuarterTurnThroughTheWindowManager() async throws {
-    let window = "\(adb) shell dumpsys window displays | grep -m1 -o 'mRotation=[0-9]'"
+    let window = "\(adb) shell dumpsys display | grep -m1 -o 'mCurrentOrientation=[0-9]'"
     let runner = MockShellRunner()
-    runner.responses[window] = .success("mRotation=0\n")
+    runner.responses[window] = .success("mCurrentOrientation=0\n")
     try await emulatorTools(runner).rotate(avd)
     #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 3")   // clockwise
     try await emulatorTools(runner).rotate(avd, clockwise: false)
     #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 1")
 
-    runner.responses[window] = .success("mRotation=1\n")   // turned back to portrait: released
+    runner.responses[window] = .success("mCurrentOrientation=1\n")   // turned back to portrait: released
     try await emulatorTools(runner).rotate(avd)
     #expect(runner.commands.last == "\(adb) shell cmd window user-rotation free")
-    runner.responses[window] = .success("mRotation=3\n")
+    runner.responses[window] = .success("mCurrentOrientation=3\n")
     try await emulatorTools(runner).rotate(avd, clockwise: false)
     #expect(runner.commands.last == "\(adb) shell cmd window user-rotation free")
 }
 
 @Test func androidRotationFallsBackToSettingsOnOldVersions() async throws {
     let runner = MockShellRunner()
-    runner.responses["\(adb) shell dumpsys window displays | grep -m1 -o 'mRotation=[0-9]'"] = .success("mRotation=0\n")
+    runner.responses["\(adb) shell dumpsys display | grep -m1 -o 'mCurrentOrientation=[0-9]'"] = .success("mCurrentOrientation=0\n")
     runner.responses["\(adb) shell cmd window user-rotation lock 3"] = .failure(ShellError(command: "cmd", exitCode: 255, stderr: "Can't find service: window"))
     try await emulatorTools(runner).rotate(avd)
     #expect(runner.commands.suffix(2) == ["\(adb) shell settings put system accelerometer_rotation 0",
                                           "\(adb) shell settings put system user_rotation 3"])
+}
+
+@Test func androidRotationSkipsUpsideDown() async throws {
+    let orientation = "\(adb) shell dumpsys display | grep -m1 -o 'mCurrentOrientation=[0-9]'"
+    let runner = MockShellRunner()
+    runner.responses[orientation] = .success("mCurrentOrientation=3\n")
+    try await emulatorTools(runner).rotate(avd)                       // clockwise from 3 would be 2
+    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 1")
+    runner.responses[orientation] = .success("mCurrentOrientation=1\n")
+    try await emulatorTools(runner).rotate(avd, clockwise: false)     // counterclockwise from 1 would be 2
+    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 3")
 }

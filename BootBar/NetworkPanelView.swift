@@ -135,7 +135,7 @@ struct NetworkPanelView: View {
         case .failed(let message):
             Text(message).font(.system(size: 11)).foregroundStyle(.red).lineLimit(1)
         case .stopped:
-            Text("Press Capture to start").font(.system(size: 11)).foregroundStyle(.secondary)
+            Text("Press Capture to start").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).layoutPriority(-1)
         }
     }
 
