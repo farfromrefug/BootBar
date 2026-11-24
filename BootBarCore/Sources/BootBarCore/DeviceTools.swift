@@ -68,9 +68,20 @@ public enum DeviceTool: Sendable, Equatable {
     public func isSupported(on platform: Platform) -> Bool {
         switch self {
         case .clearLocation, .statusBar, .revealAppData, .addMedia, .copyToFiles, .relaunch: platform == .ios
-        case .rotate, .rotateLeft, .animations, .showTaps, .reboot, .clearData, .scrcpy, .pushFile: platform == .android
+        case .animations, .showTaps, .reboot, .clearData, .scrcpy, .pushFile: platform == .android
         default: true
         }
+    }
+}
+
+/// How a simulator is held. Phones do not turn upside down, so a turn from a landscape goes back to portrait.
+public enum SimulatorOrientation: String, Sendable, Equatable {
+    case portrait
+    case landscapeLeft = "landscape-left"
+    case landscapeRight = "landscape-right"
+
+    public func turned(clockwise: Bool) -> SimulatorOrientation {
+        self == .portrait ? (clockwise ? .landscapeRight : .landscapeLeft) : .portrait
     }
 }
 
@@ -215,15 +226,28 @@ public struct SimulatorTools: Sendable {
     private let namer: CaptureNamer
     private let temporaryDirectory: String
     private let xcrun = "/usr/bin/xcrun"
+    private let locateBaguette: @Sendable () -> String?
 
     public init(runner: any ShellRunner) {
         self.init(runner: runner, namer: .live, temporaryDirectory: NSTemporaryDirectory())
     }
 
-    init(runner: any ShellRunner, namer: CaptureNamer, temporaryDirectory: String) {
+    init(runner: any ShellRunner, namer: CaptureNamer, temporaryDirectory: String,
+         locateBaguette: @escaping @Sendable () -> String? = { SimulatorInputSession.locate() }) {
         self.runner = runner
         self.namer = namer
         self.temporaryDirectory = temporaryDirectory
+        self.locateBaguette = locateBaguette
+    }
+
+    /// Turns the simulator's screen. Apple offers no command for it (Simulator.app does it through a private
+    /// interface), so this goes through Baguette.
+    public func setOrientation(_ device: Device, _ orientation: SimulatorOrientation) async throws {
+        guard let baguette = locateBaguette() else {
+            throw ShellError(command: "baguette", exitCode: 1,
+                             stderr: "Rotating a simulator needs Baguette — run: brew install baguette")
+        }
+        try await runner.run(baguette, ["orientation", "--udid", device.id, orientation.rawValue])
     }
 
     public func screenshot(_ device: Device, directory: String) async throws -> String {

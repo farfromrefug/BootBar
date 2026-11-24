@@ -21,7 +21,8 @@ public final class DeviceToolsViewModel {
     public private(set) var isWorking = false
     public private(set) var message: Message?
     /// Called after a device was rotated, so a mirror that does not follow the rotation by itself can restart.
-    public var didRotate: ((Device) -> Void)?
+    public var didRotate: ((Device, _ clockwise: Bool) -> Void)?
+    private var orientations: [String: SimulatorOrientation] = [:]
     public private(set) var recordings: [String: String] = [:]
 
     private let runner: any ShellRunner
@@ -168,7 +169,15 @@ public final class DeviceToolsViewModel {
         case .location(let latitude, let longitude): try await tools.setLocation(device, latitude: latitude, longitude: longitude); return "Location set"
         case .clearLocation: try await tools.clearLocation(device); return "Location cleared"
         case .statusBar(let clean): try await tools.setCleanStatusBar(device, clean: clean); return clean ? "Status bar set to 9:41" : "Status bar restored"
-        case .shell, .scrcpy, .rotate, .rotateLeft, .animations, .showTaps, .reboot, .clearData, .pushFile, .relaunch: return nil
+        case .rotate, .rotateLeft:
+            // the simulator cannot be asked how it is held: assume what was last set here
+            let clockwise = tool == .rotate
+            let next = (orientations[device.id] ?? .portrait).turned(clockwise: clockwise)
+            try await tools.setOrientation(device, next)
+            orientations[device.id] = next
+            didRotate?(device, clockwise)
+            return nil
+        case .shell, .scrcpy, .animations, .showTaps, .reboot, .clearData, .pushFile, .relaunch: return nil
         case .logs: try await tools.openLogs(device); return nil
         case .revealStorage: try await tools.revealStorage(device); return nil
         case .launch(let app): try await tools.launch(device, app: app); return nil
@@ -204,8 +213,8 @@ public final class DeviceToolsViewModel {
         case .openURL(let url): try await tools.openURL(device, url); return "Opened URL"
         case .install(let source): try await tools.install(device, source: source); return "Installed app"
         case .location(let latitude, let longitude): try await tools.setLocation(device, latitude: latitude, longitude: longitude); return "Location set"
-        case .rotate: try await tools.rotate(device); didRotate?(device); return nil
-        case .rotateLeft: try await tools.rotate(device, clockwise: false); didRotate?(device); return nil
+        case .rotate: try await tools.rotate(device); didRotate?(device, true); return nil
+        case .rotateLeft: try await tools.rotate(device, clockwise: false); didRotate?(device, false); return nil
         case .animations(let enabled): try await tools.setAnimations(device, enabled: enabled); return enabled ? "Animations on" : "Animations off"
         case .showTaps(let enabled): try await tools.setShowTaps(device, enabled: enabled); return enabled ? "Showing taps" : "Taps hidden"
         case .reboot: try await tools.reboot(device); return "Rebooting"

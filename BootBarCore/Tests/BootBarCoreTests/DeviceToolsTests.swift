@@ -201,7 +201,7 @@ private let listAppsOutput = """
 
 @Test func toolSupportMatchesPlatform() {
     #expect(DeviceTool.rotate.isSupported(on: .android))
-    #expect(!DeviceTool.rotate.isSupported(on: .ios))
+    #expect(DeviceTool.rotate.isSupported(on: .ios))
     #expect(DeviceTool.statusBar(clean: true).isSupported(on: .ios))
     #expect(!DeviceTool.statusBar(clean: true).isSupported(on: .android))
     #expect(DeviceTool.screenshot.isSupported(on: .ios) && DeviceTool.screenshot.isSupported(on: .android))
@@ -242,7 +242,7 @@ private func makeToolsModel(_ runner: MockShellRunner) -> DeviceToolsViewModel {
 @Test func toolsModelRejectsUnsupportedTool() async {
     let runner = MockShellRunner()
     let vm = makeToolsModel(runner)
-    await vm.perform(.rotate, on: sim)
+    await vm.perform(.animations(enabled: false), on: sim)
     #expect(vm.message?.isError == true)
     #expect(runner.commands.isEmpty)
 }
@@ -413,4 +413,20 @@ private func bundleTools(_ runner: MockShellRunner, bundletool: String? = "/bt/b
     runner.responses[orientation] = .success("mCurrentOrientation=0\n")
     try await emulatorTools(runner).rotate(avd, clockwise: false)
     #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 1")
+}
+
+@Test func simulatorRotatesThroughBaguetteAndNeverUpsideDown() async throws {
+    let runner = MockShellRunner()
+    let tools = SimulatorTools(runner: runner, namer: fixedNamer, temporaryDirectory: "/tmp", locateBaguette: { "/bin/baguette" })
+    try await tools.setOrientation(sim, .landscapeRight)
+    #expect(runner.commands == ["/bin/baguette orientation --udid UDID-1 landscape-right"])
+    #expect(SimulatorOrientation.portrait.turned(clockwise: true) == .landscapeRight)
+    #expect(SimulatorOrientation.portrait.turned(clockwise: false) == .landscapeLeft)
+    #expect(SimulatorOrientation.landscapeRight.turned(clockwise: true) == .portrait)
+    #expect(SimulatorOrientation.landscapeLeft.turned(clockwise: false) == .portrait)
+}
+
+@Test func simulatorRotationNeedsBaguette() async throws {
+    let tools = SimulatorTools(runner: MockShellRunner(), namer: fixedNamer, temporaryDirectory: "/tmp", locateBaguette: { nil })
+    await #expect(throws: ShellError.self) { try await tools.setOrientation(sim, .landscapeLeft) }
 }

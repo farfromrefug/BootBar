@@ -91,7 +91,7 @@ Install accepts a local file or an `http(s)` URL; archives (`.tar.gz`, `.zip`) a
 
 ### BootBar window
 
-The window icon in the panel header (or **Open in the BootBar window** on a device page) opens the hub. Select a device in the sidebar; the middle column shows its live screen and the right column holds the same tools as the panel. The **Mirror** toolbar button hides the middle column; the **Tools** button hides the right one and shrinks the window down to the device screen. With the tools panel shown it can be as wide as you like.
+The window icon in the panel header (or **Open in the BootBar window** on a device page) opens the hub. Select a device in the sidebar; the middle column shows its live screen and the right column holds the same tools as the panel. The **Mirror** toolbar button hides the middle column; the **Tools** button hides the right one. The two columns share the window: resizing it scales both, and the edge between them can be dragged. The picture keeps its shape, with bars where the column is not the same shape. The button strip under the picture keeps navigation, power, rotate and screenshot; the engine, the device's own window and recording are in its **…** menu.
 
 | Device | Mirror | Input |
 | --- | --- | --- |
@@ -112,7 +112,7 @@ The window icon in the panel header (or **Open in the BootBar window** on a devi
 | ⌘[ | Back (Android) |
 | ⌘L | Lock / power |
 | ⌥⌘↑ / ⌥⌘↓ | Volume up / down |
-| ⌘← / ⌘→ | Rotate left / right (Android) |
+| ⌘← / ⌘→ | Rotate left / right (Android; simulators need Baguette) |
 | ⇧⌘A | Toggle dark mode |
 | ⌥⌘= / ⌥⌘- | Larger / smaller text |
 | ⌘S | Screenshot |

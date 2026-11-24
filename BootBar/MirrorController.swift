@@ -25,6 +25,11 @@ final class MirrorController {
     private(set) var content: Content = .none
     /// Pixel size of the picture currently shown, for mapping clicks to device coordinates.
     private(set) var frameSize: CGSize?
+    /// Bumped each time the picture turns, with the direction it turned.
+    struct Rotation: Equatable { var id: Int; var clockwise: Bool }
+    private(set) var rotation: Rotation?
+    private var pendingRotation: Bool?
+    private var wasLandscape: Bool?
     private(set) var device: Device?
 
     nonisolated let displayLayer = AVSampleBufferDisplayLayer()
@@ -53,6 +58,7 @@ final class MirrorController {
 
     func start(_ device: Device) {
         stop()
+        if self.device?.id != device.id { wasLandscape = nil }
         self.device = device
         state = .starting
         switch (device.platform, device.isPhysical) {
@@ -62,10 +68,11 @@ final class MirrorController {
         }
     }
 
-    /// The adb stream (`screenrecord`) keeps recording at the size it started with, so a rotation needs a new one.
-    /// scrcpy announces the new size itself.
-    func restartAfterRotation(of rotated: Device) {
-        guard engine == "adb", device?.id == rotated.id else { return }
+    /// A rotation was asked for. The adb stream (`screenrecord`) keeps recording at the size it started with, and
+    /// Baguette's stream does not announce the new size, so both need a new stream; scrcpy announces it itself.
+    func rotated(_ rotated: Device, clockwise: Bool) {
+        pendingRotation = clockwise
+        guard engine == "adb" || (rotated.platform == .ios && !rotated.isPhysical), device?.id == rotated.id else { return }
         let token = generation
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(700))
@@ -184,6 +191,13 @@ final class MirrorController {
         if state != .live { state = .live }
         let size = CGSize(width: width, height: height)
         if frameSize != size { frameSize = size }
+        // the picture turned from portrait to landscape or back: the view animates it
+        let landscape = width > height
+        if let was = wasLandscape, was != landscape {
+            rotation = Rotation(id: (rotation?.id ?? 0) + 1, clockwise: pendingRotation ?? true)
+            pendingRotation = nil
+        }
+        wasLandscape = landscape
     }
 
     // MARK: Simulator

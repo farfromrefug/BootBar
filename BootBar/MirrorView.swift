@@ -17,6 +17,10 @@ struct MirrorView: NSViewRepresentable {
         view.acceptsInput = controller.supportsInput
         if controller.state == .live, controller.supportsInput { view.takeFocusIfUnclaimed() }
         view.show(controller.content)
+        if let rotation = controller.rotation, rotation.id != view.animatedRotation {
+            view.animatedRotation = rotation.id
+            view.animateRotation(clockwise: rotation.clockwise)
+        }
     }
 }
 
@@ -25,6 +29,7 @@ final class MirrorHostView: NSView {
     var onKey: ((NSEvent) -> Bool)?
     var frameSize: CGSize? { didSet { needsLayout = true } }
     var acceptsInput = false
+    var animatedRotation = 0
 
     private let displayLayer: AVSampleBufferDisplayLayer
     private let imageLayer = CALayer()
@@ -69,6 +74,24 @@ final class MirrorHostView: NSView {
             previewLayer?.isHidden = false
         }
         needsLayout = true
+    }
+
+    /// The new picture turns into place, the way the screen of a phone does, instead of jumping.
+    func animateRotation(clockwise: Bool) {
+        let shrink = min(bounds.width / max(bounds.height, 1), bounds.height / max(bounds.width, 1))
+        let start = CATransform3DConcat(CATransform3DMakeScale(shrink, shrink, 1),
+                                        CATransform3DMakeRotation(clockwise ? .pi / 2 : -.pi / 2, 0, 0, 1))
+        let turn = CABasicAnimation(keyPath: "transform")
+        turn.fromValue = start
+        turn.toValue = CATransform3DIdentity
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.0
+        fade.toValue = 1.0
+        let group = CAAnimationGroup()
+        group.animations = [turn, fade]
+        group.duration = 0.38
+        group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        displayLayer.add(group, forKey: "rotation")
     }
 
     override func layout() {

@@ -18,14 +18,9 @@ struct HubView: View {
     @State private var logs = LogViewModel(defaults: .standard) { Preferences.locateSDK() }
     @Environment(NetworkViewModel.self) private var network
     @State private var dropTargeted = false
-    @State private var window: NSWindow?
-    @State private var fitter = MirrorWindowFitter()
-    @State private var fitTask: Task<Void, Never>?
-    /// Width / height of the picture last shown; sizes the middle column so it has no black bars.
-    @State private var aspect: CGFloat = 9.0 / 19.5
-    /// The picture's shape when the mirror of this device first showed. The column keeps it when the device rotates:
-    /// the window does not jump to the new shape, the picture just has bars.
-    @State private var baseline: (deviceId: String, aspect: CGFloat)?
+    /// How much of the window the tools column takes, as a share: resizing the window scales both columns.
+    @AppStorage("hubInspectorFraction") private var inspectorFraction = 0.38
+    @State private var dragStartWidth: CGFloat?
     @State private var creating: Platform?
     @State private var mirror = MirrorController()
     @State private var deleting: Device?
@@ -80,7 +75,7 @@ struct HubView: View {
                     Label("Tools", systemImage: "sidebar.right")
                 }
                 .toggleStyle(.button)
-                .help("Show or hide the tools panel. Hidden, the window shrinks to the device screen.")
+                .help("Show or hide the tools panel.")
             }
         }
         .task {
@@ -92,14 +87,13 @@ struct HubView: View {
         .focusedSceneValue(\.hubActions, HubActions(device: selected, isRecording: selected.map { tools.isRecording($0) } ?? false,
                                                    perform: { perform($0) }))
         .onChange(of: router.selection) { _, _ in creating = nil }
-        .onAppear { tools.didRotate = { mirror.restartAfterRotation(of: $0) } }
+        .onAppear { tools.didRotate = { mirror.rotated($0, clockwise: $1) } }
         .onChange(of: list.iosDevices + list.androidDevices + list.physicalDevices) { _, devices in
             Task { await network.deviceListChanged(devices) }
         }
         .onChange(of: logBuffer, initial: true) { _, lines in logs.capacity = lines }
         .onChange(of: networkPort, initial: true) { _, port in network.preferredPort = port > 0 ? port : nil }
-        .background(WindowReader { window = $0; fitter.attach($0) })
-        // the app is a menu bar agent; while this window is open it also gets a Dock icon
+                // the app is a menu bar agent; while this window is open it also gets a Dock icon
         .onAppear {
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
@@ -186,12 +180,12 @@ struct HubView: View {
                 .frame(maxWidth: .infinity)
         } else if let device = selected {
             GeometryReader { geometry in
-                let mirrorWidth = mirrorColumnWidth(for: device, in: geometry.size)
+                let split = splitWidths(total: geometry.size.width)
                 HStack(spacing: 0) {
                     if showMirror {
                         MirrorPane(device: device, controller: mirror)
-                            .frame(width: mirrorWidth)
-                        if showInspector { Divider() }
+                            .frame(width: split.mirror)
+                        if showInspector { splitHandle(total: geometry.size.width, inspector: split.inspector) }
                     }
                     if showInspector || !showMirror {
                         VStack(spacing: 0) {
@@ -219,43 +213,20 @@ struct HubView: View {
                                     .frame(maxHeight: logMode == .full ? .infinity : nil)
                             }
                         }
-                        .frame(minWidth: inspectorMin, maxWidth: .infinity)
+                        .frame(width: split.inspector)
                         .background(.background.secondary)
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
-                // tools panel closed: dragging the window resizes the picture in proportion (see MirrorWindowFitter)
-                .onChange(of: FitterKey(size: geometry.size, aspect: columnAspect(for: device), inspector: showInspector, mirror: showMirror, deviceId: device.id),
-                          initial: true) { _, _ in
-                    fitter.aspect = columnAspect(for: device)
-                    fitter.barHeight = (device.platform == .android || !device.isPhysical) ? Self.barHeight : 0
-                    fitter.isActive = showMirror && !showInspector
-                    fitter.measure(detail: geometry.size)
-                }
-                // a window the user makes smaller just shrinks the picture: only these changes resize it by themselves
-                .onChange(of: FitKey(deviceId: device.id, inspector: showInspector, showsMirror: showMirror, panel: logMode != .hidden)) { _, _ in
-                    fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size)
-                        + (showInspector ? inspectorMin : 0), exactly: !showInspector)
-                }
-                .onAppear {
-                    fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size)
-                        + (showInspector ? inspectorMin : 0), exactly: !showInspector)
-                }
             }
             // narrower than this, the picture or the tools column would be pushed out of the window
-            .frame(minWidth: (showMirror ? 200 : 0) + (showInspector || !showMirror ? inspectorMin : 0))
+            .frame(minWidth: (showMirror ? Self.mirrorMin : 0) + (showInspector || !showMirror ? inspectorMin : 0))
             .task(id: LogKey(deviceId: device.id, running: device.state == .running,
                              visible: logMode != .hidden && panelKind == .logs && (showInspector || !showMirror))) {
                 if device.state == .running, logMode != .hidden, panelKind == .logs, showInspector || !showMirror {
                     logs.start(device)
                 } else {
                     logs.stop()
-                }
-            }
-            .onChange(of: mirror.frameSize) { _, size in
-                if let size, size.width > 0, size.height > 0 {
-                    aspect = size.width / size.height
-                    if baseline?.deviceId != device.id { baseline = (device.id, aspect) }
                 }
             }
             .overlay(alignment: .bottom) { toast(showsAlways: !(showInspector || !showMirror)) }
@@ -362,61 +333,32 @@ struct HubView: View {
     /// Height of the button strip under the picture; it is part of the column but not of the picture.
     static let barHeight: CGFloat = 36
 
-    private struct FitterKey: Equatable {
-        let size: CGSize
-        let aspect: CGFloat
-        let inspector: Bool
-        let mirror: Bool
-        let deviceId: String
+    /// The mirror takes what the tools column leaves; the column is a share of the window that never gets narrower
+    /// than its content needs.
+    private func splitWidths(total: CGFloat) -> (mirror: CGFloat, inspector: CGFloat) {
+        guard showMirror else { return (0, total) }
+        guard showInspector else { return (total, 0) }
+        let inspector = min(max(total * inspectorFraction, inspectorMin), max(total - Self.mirrorMin, inspectorMin))
+        return (total - inspector, inspector)
     }
 
-    private struct FitKey: Equatable {
-        let deviceId: String
-        let inspector: Bool
-        let showsMirror: Bool
-        let panel: Bool
-    }
+    private static let mirrorMin: CGFloat = 220
 
-    private func columnAspect(for device: Device) -> CGFloat {
-        baseline?.deviceId == device.id ? baseline!.aspect : aspect
-    }
-
-    /// How wide the picture wants its column: as wide as its height allows, so there are no black bars.
-    private func desiredMirrorWidth(for device: Device, in size: CGSize) -> CGFloat {
-        let bar = (device.platform == .android || !device.isPhysical) ? Self.barHeight : 0
-        let width = max(max(size.height - bar, 120) * columnAspect(for: device), 240)
-        let screenWidth = window?.screen?.visibleFrame.width ?? 1600
-        let room = screenWidth - 260 - (showInspector ? inspectorMin : 0)
-        return min(width, max(room, 200))
-    }
-
-    /// The most the column can take without pushing the tools panel out of the window.
-    private func mirrorLimit(in size: CGSize) -> CGFloat {
-        max(size.width - (showInspector ? inspectorMin : 0), 200)
-    }
-
-    /// What the column gets: the picture's width, or what the window leaves it; the picture then has bars.
-    private func mirrorColumnWidth(for device: Device, in size: CGSize) -> CGFloat {
-        min(desiredMirrorWidth(for: device, in: size), mirrorLimit(in: size))
-    }
-
-    /// Resizes the window so the detail area is `target` wide: exactly, or at least.
-    private func fit(_ device: Device, detailWidth: CGFloat, to target: CGFloat, exactly: Bool) {
-        fitTask?.cancel()
-        guard showMirror else { return }
-        fitTask = Task {
-            try? await Task.sleep(for: .milliseconds(120))
-            guard !Task.isCancelled, let window, !window.styleMask.contains(.fullScreen) else { return }
-            let delta = (exactly ? target : max(detailWidth, target)) - detailWidth
-            guard abs(delta) > 1.5 else { return }
-            var frame = window.frame
-            frame.size.width += delta
-            if let visible = window.screen?.visibleFrame {
-                frame.size.width = min(frame.width, visible.width)
-                if frame.maxX > visible.maxX { frame.origin.x = max(visible.minX, visible.maxX - frame.width) }
+    /// The edge between the mirror and the tools column: drag it to give one more room.
+    private func splitHandle(total: CGFloat, inspector: CGFloat) -> some View {
+        Divider()
+            .overlay {
+                Color.clear.frame(width: 9).contentShape(Rectangle())
+                    .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+                    .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                        .onChanged { value in
+                            let start = dragStartWidth ?? inspector
+                            dragStartWidth = start
+                            let width = min(max(start - value.translation.width, inspectorMin), max(total - Self.mirrorMin, inspectorMin))
+                            inspectorFraction = Double(width / total)
+                        }
+                        .onEnded { _ in dragStartWidth = nil })
             }
-            window.setFrame(frame, display: true, animate: false)
-        }
     }
 
     private func header(_ device: Device) -> some View {
@@ -504,7 +446,7 @@ private struct MirrorPane: View {
                 MirrorView(controller: controller)
                 overlay
             }
-            if device.platform == .android { controls } else if !device.isPhysical { simulatorBar }
+            if device.platform == .android || !device.isPhysical { buttonBar }
         }
         .task(id: key) {
             controller.stop()
@@ -558,37 +500,89 @@ private struct MirrorPane: View {
         }
     }
 
-    private var simulatorBar: some View {
+    /// The strip under the picture: navigation, power and rotation stay; what is only occasionally needed is in the menu.
+    private var buttonBar: some View {
         ViewThatFits(in: .horizontal) {
-            simulatorButtons(compact: false)
-            simulatorButtons(compact: true)
+            buttons(volume: true)
+            buttons(volume: false)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity)
         .frame(height: HubView.barHeight)
         .background(.bar)
+        .disabled(controller.state != .live && device.platform == .android)
     }
 
-    private func simulatorButtons(compact: Bool) -> some View {
+    private func buttons(volume: Bool) -> some View {
         HStack(spacing: 14) {
-            if controller.supportsInput {
+            if device.platform == .android {
+                key(.back, "chevron.left", "Back")
+                key(.home, "circle", "Home")
+                key(.appSwitch, "square", "Overview")
+                if volume {
+                    Divider().frame(height: 16)
+                    key(.volumeDown, "speaker.wave.1", "Volume down")
+                    key(.volumeUp, "speaker.wave.3", "Volume up")
+                }
+                key(.power, "power", "Power")
+            } else if controller.supportsInput {
                 simulatorKey(.home, "circle", "Home")
                 simulatorKey(.appSwitcher, "square.on.square", "App Switcher")
                 simulatorKey(.lock, "power", "Lock")
-                if !compact {
+                if volume {
+                    Divider().frame(height: 16)
                     simulatorKey(.volumeDown, "speaker.wave.1", "Volume down")
                     simulatorKey(.volumeUp, "speaker.wave.3", "Volume up")
                 }
-            } else if let notice = controller.inputNotice, !compact {
+            } else if let notice = controller.inputNotice, volume {
                 Text(notice).font(.system(size: 11))
             }
-            if let engine = controller.engine, !compact {
-                Text(engine).font(.system(size: 10)).foregroundStyle(.tertiary)
+            Divider().frame(height: 16)
+            if DeviceTool.rotate.isSupported(for: device) {
+                Button { Task { await tools.perform(.rotate, on: device) } } label: { Image(systemName: "rotate.right") }
+                    .help("Rotate")
             }
-            Button("Open Simulator") { openSimulatorApp() }.controlSize(.small).buttonStyle(.bordered)
+            Button { Task { await tools.perform(.screenshot, on: device) } } label: { Image(systemName: "camera") }
+                .help("Screenshot")
+            moreMenu
         }
         .fixedSize()
+    }
+
+    /// What is not needed all the time: which engine draws the picture, the device's own window, a recording.
+    private var moreMenu: some View {
+        Menu {
+            if let engine = controller.engine {
+                Text("Mirror engine: \(engine)")
+            }
+            if device.platform == .android {
+                if DeviceTool.scrcpy.isSupported(for: device) {
+                    Button("Open scrcpy Window") { Task { await tools.perform(.scrcpy, on: device) } }
+                }
+                Button("Volume Down") { controller.press(AndroidInput.Key.volumeDown) }
+                Button("Volume Up") { controller.press(AndroidInput.Key.volumeUp) }
+            } else {
+                Button("Open Simulator") { openSimulatorApp() }
+                if let notice = controller.inputNotice { Text(notice) }
+                Button("Volume Down") { controller.press(SimulatorInputSession.Button.volumeDown) }
+                    .disabled(!controller.supportsInput)
+                Button("Volume Up") { controller.press(SimulatorInputSession.Button.volumeUp) }
+                    .disabled(!controller.supportsInput)
+            }
+            if DeviceTool.startRecording.isSupported(for: device) {
+                Divider()
+                if tools.isRecording(device) {
+                    Button("Stop Recording") { Task { await tools.perform(.stopRecording, on: device) } }
+                } else {
+                    Button("Start Recording") { Task { await tools.perform(.startRecording, on: device) } }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help("More")
     }
 
     private func simulatorKey(_ button: SimulatorInputSession.Button, _ symbol: String, _ help: String) -> some View {
@@ -602,57 +596,6 @@ private struct MirrorPane: View {
                 return
             }
         }
-    }
-
-    private var controls: some View {
-        ViewThatFits(in: .horizontal) {
-            fullControls
-            compactControls
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity)
-        .frame(height: HubView.barHeight)
-        .background(.bar)
-        .disabled(controller.state != .live)
-    }
-
-    private var compactControls: some View {
-        HStack(spacing: 12) {
-            key(.back, "chevron.left", "Back")
-            key(.home, "circle", "Home")
-            key(.appSwitch, "square", "Overview")
-            key(.power, "power", "Power")
-            if DeviceTool.rotate.isSupported(for: device) {
-                Button { Task { await tools.perform(.rotate, on: device) } } label: { Image(systemName: "rotate.right") }
-                    .help("Rotate")
-            }
-            Button { Task { await tools.perform(.screenshot, on: device) } } label: { Image(systemName: "camera") }
-                .help("Screenshot")
-        }
-    }
-
-    private var fullControls: some View {
-        HStack(spacing: 14) {
-            key(.back, "chevron.left", "Back")
-            key(.home, "circle", "Home")
-            key(.appSwitch, "square", "Overview")
-            Divider().frame(height: 16)
-            key(.volumeDown, "speaker.wave.1", "Volume down")
-            key(.volumeUp, "speaker.wave.3", "Volume up")
-            key(.power, "power", "Power")
-            Divider().frame(height: 16)
-            if let engine = controller.engine {
-                Text(engine).font(.system(size: 10)).foregroundStyle(.tertiary)
-            }
-            if DeviceTool.rotate.isSupported(for: device) {
-                Button { Task { await tools.perform(.rotate, on: device) } } label: { Image(systemName: "rotate.right") }
-                    .help("Rotate")
-            }
-            Button { Task { await tools.perform(.screenshot, on: device) } } label: { Image(systemName: "camera") }
-                .help("Screenshot")
-        }
-        .fixedSize()
     }
 
     private func key(_ key: AndroidInput.Key, _ symbol: String, _ help: String) -> some View {
