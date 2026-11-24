@@ -19,6 +19,7 @@ All notable changes to BootBar are documented here.
 - `expo-orbit://` and `bootbar://install` links with an install confirmation
 - 60 fps simulator mirror from Baguette's H.264 stream, with screenshot polling as the fallback
 - Touch, keyboard and buttons for the simulator mirror through Baguette, healing Xcode 27's Device Hub input shadowing first
+- Choose the terminal for Shell and Logs (Terminal, iTerm2, Ghostty, kitty, WezTerm, Alacritty, Warp or any other)
 - Delete a device from its row menu, with confirmation
 - scrcpy-server engine for the Android mirror (low latency, live touch and drag) with automatic fallback to `screenrecord`
 - Install `.aab` and `.apks` on Android through bundletool

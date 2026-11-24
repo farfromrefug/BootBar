@@ -83,7 +83,9 @@ Click a device to open its page, or open its **⋯** menu for the quick actions 
 | Apps | `simctl listapps`, launch, terminate, uninstall, show data folder | `pm list packages`, launch, force-stop, uninstall, clear data |
 | Location | `simctl location` | `emu geo fix` |
 | Extras | clean 9:41 status bar | rotate, animations, show taps, reboot, shell |
-| Logs | `log stream` in Terminal | `logcat` in Terminal |
+| Logs | `log stream` in a terminal | `logcat` in a terminal |
+
+Shell and Logs open in the terminal chosen in Settings → Terminal: Terminal, iTerm2, Ghostty, kitty, WezTerm, Alacritty, Warp, or any other app that opens a `.command` file.
 
 Install accepts a local file or an `http(s)` URL; archives (`.tar.gz`, `.zip`) are unpacked and the `.app` inside is installed. Screenshots and recordings go to the folder set in Settings (default: Desktop).
 

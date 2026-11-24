@@ -25,16 +25,19 @@ public final class DeviceToolsViewModel {
     private let runner: any ShellRunner
     private let locateSDK: @Sendable () -> AndroidSDK?
     private let captureDirectory: @Sendable () -> String
+    private let terminalApp: @Sendable () -> TerminalApp
     private let finalizeDelay: Duration
     private var includeSystemApps = false
 
     public init(runner: any ShellRunner = ProcessShellRunner(),
                 finalizeDelay: Duration = .seconds(1),
                 captureDirectory: @escaping @Sendable () -> String = { NSHomeDirectory() + "/Desktop" },
+                terminalApp: @escaping @Sendable () -> TerminalApp = { .terminal },
                 locateSDK: @escaping @Sendable () -> AndroidSDK?) {
         self.runner = runner
         self.finalizeDelay = finalizeDelay
         self.captureDirectory = captureDirectory
+        self.terminalApp = terminalApp
         self.locateSDK = locateSDK
     }
 
@@ -145,7 +148,8 @@ public final class DeviceToolsViewModel {
     }
 
     private func runIOS(_ tool: DeviceTool, on device: Device) async throws -> String? {
-        let tools = SimulatorTools(runner: runner)
+        var tools = SimulatorTools(runner: runner)
+        tools.terminal = terminalApp()
         switch tool {
         case .screenshot: return try await finishCapture(try await tools.screenshot(device, directory: captureDirectory()))
         case .startRecording: return try await beginRecording(device, path: try await tools.startRecording(device, directory: captureDirectory()))
@@ -242,7 +246,9 @@ public final class DeviceToolsViewModel {
         guard let sdk = locateSDK() else {
             throw ShellError(command: "android", exitCode: 1, stderr: "Android SDK not found — set path in Settings")
         }
-        return EmulatorTools(runner: runner, sdk: sdk)
+        var tools = EmulatorTools(runner: runner, sdk: sdk)
+        tools.terminal = terminalApp()
+        return tools
     }
 
     static func friendlyMessage(_ error: Error) -> String { ErrorMessage.friendly(error) }

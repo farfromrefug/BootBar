@@ -7,6 +7,7 @@ struct BootBarApp: App {
     @State private var viewModel: DeviceListViewModel
     @State private var toolsModel = DeviceToolsViewModel(
         captureDirectory: { Preferences.captureDirectory },
+        terminalApp: { Preferences.terminalApp },
         locateSDK: { Preferences.locateSDK() })
     @State private var managementModel = DeviceManagementViewModel { Preferences.locateSDK() }
     @State private var cameraModel = VirtualCameraViewModel()

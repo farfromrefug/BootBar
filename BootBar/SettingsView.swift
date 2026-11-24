@@ -1,10 +1,13 @@
 import SwiftUI
+import BootBarCore
 
 struct SettingsView: View {
     @AppStorage(Preferences.sdkPathKey) private var androidSdkPath = ""
     @AppStorage(Preferences.muteAudioKey) private var muteAudio = false
     @AppStorage(Preferences.extraArgumentsKey) private var extraArguments = ""
     @AppStorage(Preferences.captureDirectoryKey) private var captureDirectory = ""
+    @AppStorage(Preferences.terminalAppKey) private var terminalId = "terminal"
+    @AppStorage(Preferences.terminalCustomAppKey) private var terminalCustomName = ""
     @AppStorage(Preferences.showPhysicalDevicesKey) private var showPhysicalDevices = true
     @AppStorage(Preferences.syncClipboardKey) private var syncClipboard = true
     @State private var launchModel = LaunchAtLoginModel()
@@ -67,6 +70,23 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                 TextField("Extra arguments", text: $extraArguments, prompt: Text("-gpu host -no-boot-anim"))
                 Text("Passed to every emulator start, cold boot and wipe. Quote values containing spaces.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Terminal") {
+                Picker("Open Shell and Logs in", selection: $terminalId) {
+                    ForEach(TerminalApp.presets, id: \.id) { app in
+                        Text(app.isInstalled ? app.title : "\(app.title) (not installed)").tag(app.id)
+                    }
+                    Text("Other…").tag("custom")
+                }
+                if terminalId == "custom" {
+                    TextField("Application name", text: $terminalCustomName, prompt: Text("Hyper"))
+                }
+                Text(terminalId == "custom"
+                     ? "Any terminal that opens a .command file when given to `open -a`."
+                     : "Used by the Shell and Logs actions.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

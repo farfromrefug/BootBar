@@ -119,14 +119,15 @@ struct CaptureNamer: Sendable {
 }
 
 enum TerminalLauncher {
-    /// Runs `commandLine` in a new Terminal window via a `.command` file, which needs no Automation permission.
-    static func open(_ commandLine: String, runner: any ShellRunner,
+    /// Runs `commandLine` in a new window of `terminal` through an executable `.command` file, which needs no
+    /// Automation permission.
+    static func open(_ commandLine: String, in terminal: TerminalApp = .terminal, runner: any ShellRunner,
                      directory: String = NSTemporaryDirectory()) async throws {
         let path = "\(directory)/bootbar-\(UUID().uuidString).command"
         let script = "#!/bin/zsh\nclear\nrm -f \"$0\"\n\(commandLine)\n"
         try script.write(toFile: path, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
-        try await runner.run("/usr/bin/open", ["-a", "Terminal", path])
+        try await runner.run("/usr/bin/open", terminal.openArguments(script: path))
     }
 
     static func quote(_ value: String) -> String { RemoteShell.quote(value) }
@@ -203,6 +204,8 @@ struct AppPackageResolver: Sendable {
 }
 
 public struct SimulatorTools: Sendable {
+    /// Where `openLogs` runs.
+    public var terminal: TerminalApp = .terminal
     private let runner: any ShellRunner
     private let namer: CaptureNamer
     private let temporaryDirectory: String
@@ -333,7 +336,7 @@ public struct SimulatorTools: Sendable {
     }
 
     public func openLogs(_ device: Device) async throws {
-        try await TerminalLauncher.open("xcrun simctl spawn \(device.id) log stream --level debug", runner: runner)
+        try await TerminalLauncher.open("xcrun simctl spawn \(device.id) log stream --level debug", in: terminal, runner: runner)
     }
 
     public func revealStorage(_ device: Device) async throws {
@@ -347,6 +350,8 @@ public struct SimulatorTools: Sendable {
 }
 
 public struct EmulatorTools: Sendable {
+    /// Where `openShell` and `openLogs` run.
+    public var terminal: TerminalApp = .terminal
     private let runner: any ShellRunner
     private let sdk: AndroidSDK
     private let avdHome: String
@@ -507,12 +512,12 @@ public struct EmulatorTools: Sendable {
 
     public func openShell(_ device: Device) async throws {
         try await TerminalLauncher.open("\(TerminalLauncher.quote(sdk.adbPath)) -s \(try serial(of: device)) shell",
-                                        runner: runner)
+                                        in: terminal, runner: runner)
     }
 
     public func openLogs(_ device: Device) async throws {
         try await TerminalLauncher.open("\(TerminalLauncher.quote(sdk.adbPath)) -s \(try serial(of: device)) logcat",
-                                        runner: runner)
+                                        in: terminal, runner: runner)
     }
 
     public func revealStorage(_ device: Device) async throws {

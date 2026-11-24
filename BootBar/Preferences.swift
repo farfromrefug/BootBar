@@ -8,6 +8,8 @@ nonisolated enum Preferences {
     static let captureDirectoryKey = "captureDirectory"
     static let showPhysicalDevicesKey = "showPhysicalDevices"
     static let syncClipboardKey = "syncClipboard"
+    static let terminalAppKey = "terminalApp"
+    static let terminalCustomAppKey = "terminalCustomApp"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [showPhysicalDevicesKey: true, syncClipboardKey: true])
@@ -26,6 +28,12 @@ nonisolated enum Preferences {
     static var captureDirectory: String {
         let stored = UserDefaults.standard.string(forKey: captureDirectoryKey) ?? ""
         return stored.isEmpty ? NSHomeDirectory() + "/Desktop" : (stored as NSString).expandingTildeInPath
+    }
+
+    static var terminalApp: TerminalApp {
+        let defaults = UserDefaults.standard
+        return TerminalApp(id: defaults.string(forKey: terminalAppKey) ?? "terminal",
+                           customName: defaults.string(forKey: terminalCustomAppKey) ?? "")
     }
 
     static func locateSDK() -> AndroidSDK? {
