@@ -119,10 +119,10 @@ private func session(proxyPort: Int, delegate: URLSessionDelegate? = nil) -> URL
 }
 
 /// Runs the system curl through the proxy: the exact client a developer would point at it.
-private func curl(proxyPort: Int, url: String, caFile: String? = nil) async throws -> (exit: Int32, body: String, code: String) {
+private func curl(proxyPort: Int, url: String, caFile: String? = nil, timeout: Int = 10) async throws -> (exit: Int32, body: String, code: String) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-    var arguments = ["-sS", "-m", "10", "-x", "http://127.0.0.1:\(proxyPort)", "-w", "\n%{http_code}", "--noproxy", ""]
+    var arguments = ["-sS", "-m", String(timeout), "-x", "http://127.0.0.1:\(proxyPort)", "-w", "\n%{http_code}", "--noproxy", ""]
     if let caFile { arguments += ["--cacert", caFile] }
     process.arguments = arguments + [url]
     let out = Pipe()
@@ -448,4 +448,25 @@ private let jsonHandler: UpstreamServer.Handler = { head, body in
     defer { proxy.stop() }
     let result = try await curl(proxyPort: proxy.port, url: "http://bootbar.proxy/ping")
     #expect(result.code == "200" && result.body == "BootBar")
+}
+
+@Test func aHostWhoseClientRejectedTheCertificateIsThenTunnelled() async throws {
+    let authority = try makeAuthority()
+    defer { try? FileManager.default.removeItem(atPath: authority.directory) }
+    let upstream = UpstreamServer(handler: jsonHandler)
+    try upstream.start()
+    defer { upstream.stop() }
+    let recorder = FlowRecorder()
+    let proxy = try startProxy(authority, recorder: recorder)
+    defer { proxy.stop() }
+    // curl without the BootBar certificate rejects it, as an app that ignores the user certificate store does
+    let first = try await curl(proxyPort: proxy.port, url: "https://localhost:\(upstream.port)/x")
+    #expect(first.exit != 0)
+    try await Task.sleep(for: .milliseconds(400))
+    #expect(recorder.flows.contains { $0.state == .failed })
+    // the next attempt is not decrypted: it reaches the server (which does not speak TLS here, so it still fails) and is shown as a tunnel
+    _ = try? await curl(proxyPort: proxy.port, url: "https://localhost:\(upstream.port)/x", timeout: 1)
+    try await Task.sleep(for: .milliseconds(400))
+    #expect(recorder.flows.contains { $0.isTunnel && $0.path.contains("does not trust") })
+    proxy.forgetPassedThroughHosts()
 }

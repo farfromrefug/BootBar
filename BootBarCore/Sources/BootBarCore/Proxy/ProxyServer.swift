@@ -198,6 +198,25 @@ public final class ProxyServer: @unchecked Sendable {
         return (text, Int(UInt16(bigEndian: address.sin_port)))
     }
 
+    // MARK: Hosts the client refuses to be decrypted for
+
+    private var passedThrough: Set<String> = []
+
+    private func passThroughKey(_ host: String, _ client: ClientInfo) -> String { "\(client.app ?? "")|\(host.lowercased())" }
+
+    fileprivate func passThrough(host: String, client: ClientInfo) {
+        _ = lock.withLock { passedThrough.insert(passThroughKey(host, client)) }
+    }
+
+    fileprivate func isPassedThrough(host: String, client: ClientInfo) -> Bool {
+        lock.withLock { passedThrough.contains(passThroughKey(host, client)) }
+    }
+
+    /// Decrypt again the hosts that were let through because an app rejected the certificate, e.g. after it was installed.
+    public func forgetPassedThroughHosts() {
+        lock.withLock { passedThrough = [] }
+    }
+
     /// Whether a host name or address leads back to this proxy, so requests for it must not be forwarded to itself.
     fileprivate func isOwnAddress(_ host: String) -> Bool {
         host == "localhost" || host == "127.0.0.1" || LocalNetwork.ipv4Addresses().contains(host)
@@ -270,6 +289,11 @@ private final class ProxySession {
             tunnel(host: host, port: port, flow: &flow, reason: options.interceptHTTPS ? "excluded from interception" : nil)
             return
         }
+        // an app that rejected the certificate once would only fail again: let it through untouched from now on
+        if server.isPassedThrough(host: host, client: client) {
+            tunnel(host: host, port: port, flow: &flow, reason: "not decrypted: the app does not trust the BootBar certificate")
+            return
+        }
         do {
             try socket.write(Data("HTTP/1.1 200 Connection Established\r\n\r\n".utf8))
         } catch { return }
@@ -287,8 +311,9 @@ private final class ProxySession {
         } catch {
             flow.state = .failed
             flow.finishedAt = Date()
-            flow.error = "TLS handshake with the client failed: \(error)"
+            flow.error = "TLS handshake with the client failed (\(error)). The app probably does not trust the BootBar certificate; this host is passed through undecrypted from now on."
             flow.isTunnel = true
+            server.passThrough(host: host, client: client)
             publish(flow)
             return
         }

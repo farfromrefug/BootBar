@@ -10,6 +10,7 @@ All notable changes to BootBar are documented here.
 - Built-in intercepting proxy in Swift with an on-the-fly certificate authority, and Set Up actions that trust the certificate and route the device (simulator keychain and macOS proxy, `adb reverse` and the Android proxy setting)
 - Network: a small Kotlin helper app (VPN) that points Android devices at the proxy; it connects when BootBar starts capturing and disconnects when it stops, and shows its state
 - Network: iPhones and iPads over Wi-Fi (the proxy listens on the network on request, `http://bootbar.proxy` serves the certificate), and a proxy port setting (automatic by default: 8899, or a free port when taken)
+- Network: a host whose app rejected the BootBar certificate is tunnelled afterwards instead of failing again
 - The log and network panels share their column, app filter and resize code
 - Android: start without sound, as a global option (device menu then offers Start with Sound) and as a per-launch menu entry
 - Android: extra emulator arguments applied to every start, cold boot and wipe

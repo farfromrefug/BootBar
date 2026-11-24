@@ -265,6 +265,8 @@ public final class NetworkViewModel {
         if !isRunning { await start(routeMac: device.platform == .ios) }
         guard isRunning, let authority else { return }
         let setup = makeSetup(authority)
+        // a certificate that has just been installed may now be trusted by the apps that rejected it
+        server?.forgetPassedThroughHosts()
         do {
             do {
                 if !setup.isCertificateInstalled(on: device) { setupMessage = try await setup.installCertificate(on: device) }
@@ -309,6 +311,7 @@ public final class NetworkViewModel {
         self.authority = authority
         isWorking = true
         defer { isWorking = false }
+        server?.forgetPassedThroughHosts()
         do {
             setupMessage = try await makeSetup(authority).installCertificate(on: device)
         } catch {
