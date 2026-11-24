@@ -38,6 +38,11 @@ struct LogPanelView: View {
             content
         }
         .background(.background)
+        // a fresh log, and a freshly opened panel, start at the end and follow it
+        .onAppear { isAtBottom = true }
+        .onChange(of: model.visible.isEmpty) { _, empty in
+            if empty { isAtBottom = true }
+        }
     }
 
     // MARK: Header
@@ -276,6 +281,9 @@ struct LogPanelView: View {
                     .padding(.vertical, 2)
                 }
                 // the native anchor keeps the end in view as lines arrive; scrolling up releases it and the view stays put
+                .onAppear {
+                    if let last = model.visible.last?.id { proxy.scrollTo(last, anchor: .bottom) }
+                }
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
                 .onScrollPhaseChange { _, phase in scrollPhase = phase }

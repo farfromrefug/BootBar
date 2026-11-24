@@ -219,3 +219,46 @@ private struct LinesStreamer: ByteStreaming {
     model.capacity = 1
     #expect(model.capacity == 100)
 }
+
+private final class StreamProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var started = 0
+    private var ended = 0
+    func begin() { lock.withLock { started += 1 } }
+    func end() { lock.withLock { ended += 1 } }
+    var counts: (started: Int, ended: Int) { lock.withLock { (started, ended) } }
+}
+
+private struct ProbedStreamer: ByteStreaming {
+    let probe: StreamProbe
+    func stream(_ executable: String, _ arguments: [String]) -> AsyncThrowingStream<Data, Error> {
+        probe.begin()
+        return AsyncThrowingStream { continuation in
+            continuation.onTermination = { [probe] _ in probe.end() }
+        }
+    }
+}
+
+@MainActor
+@Test func stoppingTheLogEndsTheUnderlyingProcessAndStartingNothingListensBefore() async throws {
+    let probe = StreamProbe()
+    let model = LogViewModel(streamer: ProbedStreamer(probe: probe)) { AndroidSDK(root: "/sdk") }
+    #expect(probe.counts.started == 0)   // creating the model listens to nothing
+
+    let sim = Device(id: "U", name: "iPhone", platform: .ios, osVersion: "iOS", state: .running)
+    model.start(sim)
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(probe.counts == (1, 0))
+
+    model.stop()
+    try await Task.sleep(for: .milliseconds(150))
+    #expect(probe.counts == (1, 1))   // the stream, and so the logging process, is gone
+    #expect(model.state == .idle)
+
+    model.start(sim)   // switching device restarts rather than stacking streams
+    model.start(Device(id: "V", name: "iPad", platform: .ios, osVersion: "iOS", state: .running))
+    try await Task.sleep(for: .milliseconds(150))
+    model.stop()
+    try await Task.sleep(for: .milliseconds(150))
+    #expect(probe.counts.started == 3 && probe.counts.ended == 3)   // every stream that started has been ended
+}
