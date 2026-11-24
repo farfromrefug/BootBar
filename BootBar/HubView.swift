@@ -23,6 +23,9 @@ struct HubView: View {
     @State private var fitTask: Task<Void, Never>?
     /// Width / height of the picture last shown; sizes the middle column so it has no black bars.
     @State private var aspect: CGFloat = 9.0 / 19.5
+    /// The picture's shape when the mirror of this device first showed. The column keeps it when the device rotates:
+    /// the window does not jump to the new shape, the picture just has bars.
+    @State private var baseline: (deviceId: String, aspect: CGFloat)?
     @State private var creating: Platform?
     @State private var mirror = MirrorController()
     @State private var deleting: Device?
@@ -222,9 +225,9 @@ struct HubView: View {
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
                 // tools panel closed: dragging the window resizes the picture in proportion (see MirrorWindowFitter)
-                .onChange(of: FitterKey(size: geometry.size, aspect: aspect, inspector: showInspector, mirror: showMirror, deviceId: device.id),
+                .onChange(of: FitterKey(size: geometry.size, aspect: columnAspect(for: device), inspector: showInspector, mirror: showMirror, deviceId: device.id),
                           initial: true) { _, _ in
-                    fitter.aspect = aspect
+                    fitter.aspect = columnAspect(for: device)
                     fitter.barHeight = (device.platform == .android || !device.isPhysical) ? Self.barHeight : 0
                     fitter.isActive = showMirror && !showInspector
                     fitter.measure(detail: geometry.size)
@@ -233,13 +236,6 @@ struct HubView: View {
                 .onChange(of: FitKey(deviceId: device.id, inspector: showInspector, showsMirror: showMirror, panel: logMode != .hidden)) { _, _ in
                     fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size)
                         + (showInspector ? inspectorMin : 0), exactly: !showInspector)
-                }
-                // the picture turned (portrait to landscape or back): the window follows, the tools panel keeps its width
-                .onChange(of: aspect) { old, new in
-                    let was = min(desiredMirrorWidth(for: device, in: geometry.size, aspect: old), mirrorLimit(in: geometry.size))
-                    let inspector = showInspector ? max(geometry.size.width - was, inspectorMin) : 0
-                    fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size, aspect: new) + inspector,
-                        exactly: true)
                 }
                 .onAppear {
                     fit(device, detailWidth: geometry.size.width, to: desiredMirrorWidth(for: device, in: geometry.size)
@@ -257,7 +253,10 @@ struct HubView: View {
                 }
             }
             .onChange(of: mirror.frameSize) { _, size in
-                if let size, size.width > 0, size.height > 0 { aspect = size.width / size.height }
+                if let size, size.width > 0, size.height > 0 {
+                    aspect = size.width / size.height
+                    if baseline?.deviceId != device.id { baseline = (device.id, aspect) }
+                }
             }
             .overlay(alignment: .bottom) { toast(showsAlways: !(showInspector || !showMirror)) }
             .overlay(alignment: .topTrailing) {
@@ -378,10 +377,14 @@ struct HubView: View {
         let panel: Bool
     }
 
+    private func columnAspect(for device: Device) -> CGFloat {
+        baseline?.deviceId == device.id ? baseline!.aspect : aspect
+    }
+
     /// How wide the picture wants its column: as wide as its height allows, so there are no black bars.
-    private func desiredMirrorWidth(for device: Device, in size: CGSize, aspect: CGFloat? = nil) -> CGFloat {
+    private func desiredMirrorWidth(for device: Device, in size: CGSize) -> CGFloat {
         let bar = (device.platform == .android || !device.isPhysical) ? Self.barHeight : 0
-        let width = max(max(size.height - bar, 120) * (aspect ?? self.aspect), 240)
+        let width = max(max(size.height - bar, 120) * columnAspect(for: device), 240)
         let screenWidth = window?.screen?.visibleFrame.width ?? 1600
         let room = screenWidth - 260 - (showInspector ? inspectorMin : 0)
         return min(width, max(room, 200))

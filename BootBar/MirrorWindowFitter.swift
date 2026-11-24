@@ -21,11 +21,21 @@ final class MirrorWindowFitter: NSObject, NSWindowDelegate {
         self.window = window
         original = window.delegate
         window.delegate = self
+        observer = NotificationCenter.default.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { [weak self] _ in
+            // the layout has caught up with the window
+            guard let self, let window = self.window, self.lastDetail != .zero else { return }
+            self.chrome = CGSize(width: window.frame.width - self.lastDetail.width, height: window.frame.height - self.lastDetail.height)
+        }
     }
 
-    /// Call whenever the area that holds the picture changes size.
+    private var lastDetail = CGSize.zero
+    private var observer: NSObjectProtocol?
+
+    /// Call whenever the area that holds the picture changes size. The chrome is only worked out while the window is
+    /// at rest: during a drag the layout lags a frame behind the window, which would feed a wrong size back.
     func measure(detail: CGSize) {
-        guard let window else { return }
+        lastDetail = detail
+        guard let window, !window.inLiveResize else { return }
         chrome = CGSize(width: window.frame.width - detail.width, height: window.frame.height - detail.height)
     }
 
@@ -41,6 +51,9 @@ final class MirrorWindowFitter: NSObject, NSWindowDelegate {
             }
             pictureWidth = max(pictureWidth, 240)
             size = NSSize(width: pictureWidth + chrome.width, height: pictureWidth / aspect + barHeight + chrome.height)
+            // never below what the window itself accepts, or AppKit and this would keep correcting each other
+            size.width = max(size.width, sender.minSize.width)
+            size.height = max(size.height, sender.minSize.height)
         }
         if let original, original.responds(to: #selector(NSWindowDelegate.windowWillResize(_:to:))) {
             return original.windowWillResize?(sender, to: size) ?? size
