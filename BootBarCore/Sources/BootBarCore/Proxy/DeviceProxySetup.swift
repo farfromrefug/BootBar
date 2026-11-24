@@ -174,8 +174,8 @@ public struct DeviceProxySetup: Sendable {
         let value = (try? await adb(device, ["shell", "settings", "get", "global", "http_proxy"])) ?? ""
         if value.trimmingCharacters(in: .whitespacesAndNewlines) == "127.0.0.1:\(port)" { return true }
         guard helperAPK != nil else { return false }
-        let services = (try? await adb(device, ["shell", "dumpsys", "activity", "services", Self.helperPackage])) ?? ""
-        return services.contains("ServiceRecord")
+        let connectivity = (try? await adb(device, ["shell", "dumpsys", "connectivity"])) ?? ""
+        return connectivity.contains("CONNECTED extra: VPN:\(Self.helperPackage)")
     }
 
     /// Arguments that make the helper app start or stop its VPN.

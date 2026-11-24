@@ -82,7 +82,7 @@ class MainActivity : Activity() {
     }
 
     private fun stop() {
-        stopService(Intent(this, ProxyVpnService::class.java))
+        startService(Intent(this, ProxyVpnService::class.java).putExtra("stop", true))
         status.postDelayed({ refresh(); if (quiet) finish() }, 300)
     }
 

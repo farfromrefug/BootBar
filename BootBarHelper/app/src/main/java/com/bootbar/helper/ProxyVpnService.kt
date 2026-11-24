@@ -13,6 +13,12 @@ class ProxyVpnService : VpnService() {
     private var tunnel: ParcelFileDescriptor? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.getBooleanExtra("stop", false) == true) {
+            // the system keeps the service bound while the VPN is up, so closing the tunnel is what ends it
+            stopTunnel()
+            stopSelf()
+            return START_NOT_STICKY
+        }
         val settings = Settings(this)
         val host = intent?.getStringExtra("host") ?: settings.host
         val port = intent?.getIntExtra("port", 0)?.takeIf { it > 0 } ?: settings.port
