@@ -8,6 +8,11 @@ struct DeviceSectionView: View {
     let busyDeviceIds: Set<String>
     let rowErrors: [String: String]
     let onAction: (DeviceAction, Device) -> Void
+    let onManage: (Device) -> Void
+    let onDelete: (Device) -> Void
+    var onAdd: (() -> Void)?
+    var onCleanUp: (() -> Void)?
+    var summary: (([Device]) -> String)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -30,13 +35,31 @@ struct DeviceSectionView: View {
             Spacer()
             Text(runningSummary)
                 .font(.system(size: 11, weight: .medium))
+            if let onAdd {
+                Button(action: onAdd) {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.plain)
+                .help("New device")
+            }
+            if let onCleanUp {
+                Menu {
+                    Button("Delete Unavailable Simulators", role: .destructive, action: onCleanUp)
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            }
         }
         .foregroundStyle(.secondary)
         .padding(.horizontal, 6)
     }
 
     private var runningSummary: String {
-        "\(devices.count(where: { $0.state == .running })) of \(devices.count) running"
+        if let summary { return summary(devices) }
+        return "\(devices.count(where: { $0.state == .running })) of \(devices.count) running"
     }
 
     private var deviceGroup: some View {
@@ -49,7 +72,9 @@ struct DeviceSectionView: View {
                     device: device,
                     isBusy: busyDeviceIds.contains(device.id),
                     error: rowErrors[device.id],
-                    onAction: { onAction($0, device) })
+                    onAction: { onAction($0, device) },
+                    onManage: { onManage(device) },
+                    onDelete: { onDelete(device) })
             }
         }
         .background(.background, in: RoundedRectangle(cornerRadius: 8))

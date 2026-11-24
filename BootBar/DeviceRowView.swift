@@ -2,10 +2,16 @@ import SwiftUI
 import BootBarCore
 
 struct DeviceRowView: View {
+    @Environment(DeviceToolsViewModel.self) private var toolsModel
+    @AppStorage(Preferences.muteAudioKey) private var muteAudio = false
+
     let device: Device
     let isBusy: Bool
     let error: String?
     let onAction: (DeviceAction) -> Void
+    let onManage: () -> Void
+    let onDelete: () -> Void
+    @State private var confirmingDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -14,6 +20,18 @@ struct DeviceRowView: View {
                 deviceInfo
                 Spacer(minLength: 8)
                 trailing
+            }
+            if confirmingDelete {
+                HStack(spacing: 8) {
+                    Text("Delete \(device.name)?").font(.system(size: 11))
+                    Spacer()
+                    Button("Cancel") { confirmingDelete = false }
+                    Button("Delete", role: .destructive) {
+                        confirmingDelete = false
+                        onDelete()
+                    }
+                }
+                .controlSize(.small)
             }
             if let error {
                 Text(error)
@@ -24,6 +42,8 @@ struct DeviceRowView: View {
         }
         .padding(.vertical, 9)
         .padding(.horizontal, 10)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onManage)
     }
 
     private var deviceInfo: some View {
@@ -39,9 +59,10 @@ struct DeviceRowView: View {
 
     private var stateLabel: String {
         switch device.state {
-        case .running: "Running"
+        case .running: device.isPhysical ? "Connected" : "Running"
         case .booting: "Booting…"
         case .stopped: "Stopped"
+        case .unavailable: device.statusNote ?? "Unavailable"
         }
     }
 
@@ -50,6 +71,7 @@ struct DeviceRowView: View {
         case .running: .green
         case .booting: .orange
         case .stopped: Color(nsColor: .tertiaryLabelColor)
+        case .unavailable: .red
         }
     }
 
@@ -58,7 +80,7 @@ struct DeviceRowView: View {
         if isBusy {
             ProgressView().controlSize(.small)
         } else {
-            primaryActionButton
+            if !device.isPhysical { primaryActionButton }
             actionMenu
         }
     }
@@ -77,9 +99,41 @@ struct DeviceRowView: View {
 
     private var actionMenu: some View {
         Menu {
-            Button("Cold Boot") { onAction(.coldBoot) }
-            Button(device.platform == .ios ? "Erase" : "Wipe Data", role: .destructive) {
-                onAction(.erase)
+            if !device.isPhysical && device.platform == .android && device.state == .stopped {
+                Button(muteAudio ? "Start with Sound" : "Start without Sound") {
+                    onAction(.startWithAlternateAudio)
+                }
+            }
+            if !device.isPhysical {
+                Button("Cold Boot") { onAction(.coldBoot) }
+                Button(device.platform == .ios ? "Erase" : "Wipe Data", role: .destructive) {
+                    onAction(.erase)
+                }
+            }
+            if device.state == .running {
+                if !device.isPhysical { Divider() }
+                if DeviceTool.screenshot.isSupported(for: device) {
+                    Button("Screenshot") { runTool(.screenshot) }
+                }
+                if DeviceTool.startRecording.isSupported(for: device) {
+                    if toolsModel.isRecording(device) {
+                        Button("Stop Recording") { runTool(.stopRecording) }
+                    } else {
+                        Button("Start Recording") { runTool(.startRecording) }
+                    }
+                }
+                if DeviceTool.appearance(dark: true).isSupported(for: device) {
+                    Menu("Appearance") {
+                        Button("Dark") { runTool(.appearance(dark: true)) }
+                        Button("Light") { runTool(.appearance(dark: false)) }
+                    }
+                }
+            }
+            Divider()
+            Button("Manage…", action: onManage)
+            if !device.isPhysical {
+                Button("Delete…", role: .destructive) { confirmingDelete = true }
+                    .disabled(device.state != .stopped)
             }
         } label: {
             Image(systemName: "ellipsis").foregroundStyle(.secondary)
@@ -87,5 +141,9 @@ struct DeviceRowView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .frame(width: 24, height: 24)
+    }
+
+    private func runTool(_ tool: DeviceTool) {
+        Task { await toolsModel.perform(tool, on: device) }
     }
 }

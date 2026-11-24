@@ -3,8 +3,17 @@ import AppKit
 import Combine
 import BootBarCore
 
+enum PanelRoute: Equatable {
+    case list
+    case detail(deviceId: String)
+    case create(Platform)
+}
+
 struct MenuBarPanelView: View {
     @Environment(DeviceListViewModel.self) private var viewModel
+    @Environment(DeviceToolsViewModel.self) private var toolsModel
+    @Environment(DeviceManagementViewModel.self) private var managementModel
+    @State private var route: PanelRoute = .list
     @Environment(\.openSettings) private var openSettings
     @Environment(\.scenePhase) private var scenePhase
 
@@ -14,19 +23,65 @@ struct MenuBarPanelView: View {
         .publisher(for: NSWorkspace.didTerminateApplicationNotification)
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            deviceList
-            Divider()
-            footer
-        }
+        content
         .task { await autoRefresh() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await viewModel.refresh() } }
         }
         .onReceive(appLaunched) { refreshIfDeviceHost($0) }
         .onReceive(appTerminated) { refreshIfDeviceHost($0) }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch route {
+        case .list:
+            VStack(spacing: 0) {
+                header
+                Divider()
+                deviceList
+                notices
+                Divider()
+                footer
+            }
+        case .detail(let deviceId):
+            DeviceDetailView(deviceId: deviceId, onBack: { route = .list })
+        case .create(let platform):
+            CreateDeviceView(platform: platform, onDone: { route = .list })
+        }
+    }
+
+    @ViewBuilder
+    private var notices: some View {
+        if let message = toolsModel.message {
+            noticeBanner(message.text, isError: message.isError) { toolsModel.dismissMessage() }
+                .task(id: message) {
+                    guard !message.isError else { return }
+                    try? await Task.sleep(for: .seconds(5))
+                    if toolsModel.message == message { toolsModel.dismissMessage() }
+                }
+        }
+        if let error = managementModel.error {
+            noticeBanner(error, isError: true) { managementModel.dismissError() }
+        }
+    }
+
+    private func noticeBanner(_ text: String, isError: Bool, dismiss: @escaping () -> Void) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(isError ? Color.red : Color.green)
+            Text(text)
+                .font(.system(size: 11))
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: dismiss) {
+                Image(systemName: "xmark").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.quaternary)
     }
 
     private var header: some View {
@@ -54,14 +109,33 @@ struct MenuBarPanelView: View {
                     error: viewModel.iosError,
                     busyDeviceIds: viewModel.busyDeviceIds,
                     rowErrors: viewModel.rowErrors,
-                    onAction: performAction)
+                    onAction: performAction,
+                    onManage: { route = .detail(deviceId: $0.id) },
+                    onDelete: deleteDevice,
+                    onAdd: { route = .create(.ios) },
+                    onCleanUp: cleanUpUnavailableSimulators)
                 DeviceSectionView(
                     title: "ANDROID EMULATORS",
                     devices: viewModel.androidDevices,
                     error: viewModel.androidError,
                     busyDeviceIds: viewModel.busyDeviceIds,
                     rowErrors: viewModel.rowErrors,
-                    onAction: performAction)
+                    onAction: performAction,
+                    onManage: { route = .detail(deviceId: $0.id) },
+                    onDelete: deleteDevice,
+                    onAdd: { route = .create(.android) })
+                if !viewModel.physicalDevices.isEmpty || viewModel.physicalError != nil {
+                    DeviceSectionView(
+                        title: "PHYSICAL DEVICES",
+                        devices: viewModel.physicalDevices,
+                        error: viewModel.physicalError,
+                        busyDeviceIds: viewModel.busyDeviceIds,
+                        rowErrors: viewModel.rowErrors,
+                        onAction: performAction,
+                        onManage: { route = .detail(deviceId: $0.id) },
+                        onDelete: deleteDevice,
+                        summary: connectedSummary)
+                }
             }
             .padding(10)
         }
@@ -94,6 +168,24 @@ struct MenuBarPanelView: View {
 
     private func performAction(_ action: DeviceAction, on device: Device) {
         Task { await viewModel.perform(action, on: device) }
+    }
+
+    private func connectedSummary(_ devices: [Device]) -> String {
+        "\(devices.count(where: { $0.state == .running })) connected"
+    }
+
+    private func deleteDevice(_ device: Device) {
+        Task {
+            _ = await managementModel.delete(device)
+            await viewModel.refresh()
+        }
+    }
+
+    private func cleanUpUnavailableSimulators() {
+        Task {
+            _ = await managementModel.deleteUnavailableSimulators()
+            await viewModel.refresh()
+        }
     }
 
     private func autoRefresh() async {
