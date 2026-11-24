@@ -32,9 +32,14 @@ public struct DeviceProxySetup: Sendable {
     private let sdk: AndroidSDK?
     private let authority: CertificateAuthority
     private let statePath: String
+    /// The small VPN app that points an Android device at the proxy; without it the global proxy setting is used.
+    private let helperAPK: String?
+    public static let helperPackage = "com.bootbar.helper"
 
     public init(runner: any ShellRunner = ProcessShellRunner(), sdk: AndroidSDK?, authority: CertificateAuthority,
+                helperAPK: String? = nil,
                 statePath: String = NSHomeDirectory() + "/Library/Application Support/BootBar/Proxy/installed-certificates.json") {
+        self.helperAPK = helperAPK
         self.runner = runner
         self.sdk = sdk
         self.authority = authority
@@ -149,16 +154,41 @@ public struct DeviceProxySetup: Sendable {
 
     public func enableAndroidProxy(on device: Device, port: Int) async throws {
         _ = try await adb(device, ["reverse", "tcp:\(port)", "tcp:\(port)"])
-        _ = try await adb(device, ["shell", "settings", "put", "global", "http_proxy", "127.0.0.1:\(port)"])
+        if let helperAPK {
+            try await installHelperIfNeeded(device, apk: helperAPK)
+            // lets the VPN start without the system's confirmation dialog
+            _ = try? await adb(device, ["shell", "appops", "set", Self.helperPackage, "ACTIVATE_VPN", "allow"])
+            _ = try await adb(device, helperCommand("start", port: port))
+        } else {
+            _ = try await adb(device, ["shell", "settings", "put", "global", "http_proxy", "127.0.0.1:\(port)"])
+        }
     }
 
     public func disableAndroidProxy(on device: Device, port: Int) async throws {
+        if helperAPK != nil { _ = try? await adb(device, helperCommand("stop", port: port)) }
         _ = try await adb(device, ["shell", "settings", "put", "global", "http_proxy", ":0"])
         _ = try? await adb(device, ["reverse", "--remove", "tcp:\(port)"])
     }
 
     public func isAndroidProxyEnabled(on device: Device, port: Int) async -> Bool {
         let value = (try? await adb(device, ["shell", "settings", "get", "global", "http_proxy"])) ?? ""
-        return value.trimmingCharacters(in: .whitespacesAndNewlines) == "127.0.0.1:\(port)"
+        if value.trimmingCharacters(in: .whitespacesAndNewlines) == "127.0.0.1:\(port)" { return true }
+        guard helperAPK != nil else { return false }
+        let services = (try? await adb(device, ["shell", "dumpsys", "activity", "services", Self.helperPackage])) ?? ""
+        return services.contains("ServiceRecord")
+    }
+
+    /// Arguments that make the helper app start or stop its VPN.
+    public static func helperArguments(_ command: String, port: Int) -> [String] {
+        ["shell", "am", "start", "-n", "\(helperPackage)/.MainActivity", "--es", "command", command,
+         "--es", "host", "127.0.0.1", "--ei", "port", String(port), "--ez", "quiet", "true"]
+    }
+
+    private func helperCommand(_ command: String, port: Int) -> [String] { Self.helperArguments(command, port: port) }
+
+    private func installHelperIfNeeded(_ device: Device, apk: String) async throws {
+        let installed = (try? await adb(device, ["shell", "pm", "path", Self.helperPackage])) ?? ""
+        if installed.contains("package:") { return }
+        _ = try await adb(device, ["install", "-r", "-g", apk])
     }
 }

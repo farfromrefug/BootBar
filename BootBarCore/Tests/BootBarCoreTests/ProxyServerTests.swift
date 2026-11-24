@@ -433,3 +433,10 @@ private let jsonHandler: UpstreamServer.Handler = { head, body in
         #expect(address.split(separator: ".").count == 4 && !address.hasPrefix("127."))
     }
 }
+
+@Test func helperAppIsStartedAndStoppedThroughItsActivity() {
+    let start = DeviceProxySetup.helperArguments("start", port: 8899)
+    #expect(start.starts(with: ["shell", "am", "start", "-n", "com.bootbar.helper/.MainActivity"]))
+    #expect(start.contains("start") && start.contains("8899") && start.contains("quiet"))
+    #expect(DeviceProxySetup.helperArguments("stop", port: 1).contains("stop"))
+}

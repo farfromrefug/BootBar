@@ -63,11 +63,13 @@ public final class NetworkViewModel {
     private let systemProxy: SystemProxy
     private let defaults: UserDefaults?
     private let debounce: Duration
+    private let helperAPK: @Sendable () -> String?
     private static let filtersKey = "networkFilters"
 
     public init(runner: any ShellRunner = ProcessShellRunner(), capacity: Int = 5000, debounce: Duration = .milliseconds(150),
                 defaults: UserDefaults? = nil, systemProxy: SystemProxy = SystemProxy(),
                 makeAuthority: @escaping @Sendable () throws -> CertificateAuthority = { try CertificateAuthority() },
+                helperAPK: @escaping @Sendable () -> String? = { nil },
                 locateSDK: @escaping @Sendable () -> AndroidSDK?) {
         self.runner = runner
         self.capacity = capacity
@@ -76,6 +78,7 @@ public final class NetworkViewModel {
         self.systemProxy = systemProxy
         self.makeAuthority = makeAuthority
         self.locateSDK = locateSDK
+        self.helperAPK = helperAPK
         if let data = defaults?.data(forKey: Self.filtersKey),
            let saved = try? JSONDecoder().decode([String: HTTPFilter].self, from: data) {
             savedFilters = saved
@@ -142,7 +145,7 @@ public final class NetworkViewModel {
             isRoutingMac = false
         }
         for device in configuredAndroid.values {
-            if let authority { try? await DeviceProxySetup(runner: runner, sdk: locateSDK(), authority: authority).disableAndroidProxy(on: device, port: port) }
+            if let authority { try? await makeSetup(authority).disableAndroidProxy(on: device, port: port) }
         }
         configuredAndroid = [:]
         if isRunning { state = .stopped }
@@ -172,12 +175,17 @@ public final class NetworkViewModel {
         SystemProxy().restoreNow()
     }
 
+    private func makeSetup(_ authority: CertificateAuthority) -> DeviceProxySetup {
+        DeviceProxySetup(runner: runner, sdk: locateSDK(), authority: authority, helperAPK: helperAPK())
+    }
+
     /// For quitting: Android devices keep the proxy setting after the app is gone, which would cut their network.
     public func restoreAndroidForQuit() {
         guard let sdk = locateSDK() else { return }
         for device in configuredAndroid.values {
             guard let serial = device.serial else { continue }
-            for arguments in [["shell", "settings", "put", "global", "http_proxy", ":0"], ["reverse", "--remove", "tcp:\(port)"]] {
+            for arguments in [DeviceProxySetup.helperArguments("stop", port: port), ["shell", "settings", "put", "global", "http_proxy", ":0"],
+                              ["reverse", "--remove", "tcp:\(port)"]] {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: sdk.adbPath)
                 process.arguments = ["-s", serial] + arguments
@@ -205,7 +213,7 @@ public final class NetworkViewModel {
 
     public func refreshDeviceState() async {
         guard let device, let authority else { deviceState = DeviceProxyState(); return }
-        let setup = DeviceProxySetup(runner: runner, sdk: locateSDK(), authority: authority)
+        let setup = makeSetup(authority)
         var state = DeviceProxyState(certificateInstalled: setup.isCertificateInstalled(on: device))
         switch (device.platform, device.isPhysical) {
         case (.ios, false): state.proxyConfigured = isRoutingMac
@@ -231,7 +239,7 @@ public final class NetworkViewModel {
         }
         if !isRunning { await start(routeMac: device.platform == .ios) }
         guard isRunning, let authority else { return }
-        let setup = DeviceProxySetup(runner: runner, sdk: locateSDK(), authority: authority)
+        let setup = makeSetup(authority)
         do {
             do {
                 if !setup.isCertificateInstalled(on: device) { setupMessage = try await setup.installCertificate(on: device) }
@@ -276,7 +284,7 @@ public final class NetworkViewModel {
         isWorking = true
         defer { isWorking = false }
         do {
-            setupMessage = try await DeviceProxySetup(runner: runner, sdk: locateSDK(), authority: authority).installCertificate(on: device)
+            setupMessage = try await makeSetup(authority).installCertificate(on: device)
         } catch {
             setupMessage = ErrorMessage.friendly(error)
         }
@@ -295,7 +303,7 @@ public final class NetworkViewModel {
             return
         }
         if device.platform == .android, let authority {
-            try? await DeviceProxySetup(runner: runner, sdk: locateSDK(), authority: authority).disableAndroidProxy(on: device, port: port)
+            try? await makeSetup(authority).disableAndroidProxy(on: device, port: port)
             configuredAndroid[device.id] = nil
         } else if isRoutingMac {
             try? await systemProxy.restore()

@@ -12,7 +12,10 @@ struct BootBarApp: App {
     @State private var managementModel = DeviceManagementViewModel { Preferences.locateSDK() }
     @State private var cameraModel = VirtualCameraViewModel()
     @State private var hubRouter = HubRouter()
-    @State private var networkModel = NetworkViewModel(defaults: .standard) { Preferences.locateSDK() }
+    @State private var networkModel = NetworkViewModel(
+        defaults: .standard,
+        helperAPK: { Bundle.main.path(forResource: "BootBarHelper", ofType: "apk") },
+        locateSDK: { Preferences.locateSDK() })
     @State private var installCenter = InstallRequestCenter.shared
 
     init() {
