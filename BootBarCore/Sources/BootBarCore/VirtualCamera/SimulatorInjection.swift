@@ -96,7 +96,8 @@ public struct SimulatorInjection: Sendable {
         let collected = CollectedData()
         for (pipe, isOutput) in [(out, true), (err, false)] {
             group.enter()
-            DispatchQueue.global().async {
+            // a thread of its own: pool workers can all be busy waiting for each other when many run at once
+            Thread.detachNewThread {
                 collected.store(pipe.fileHandleForReading.readDataToEndOfFile(), isOutput: isOutput)
                 group.leave()
             }

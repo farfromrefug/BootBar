@@ -134,30 +134,18 @@ public final class CertificateAuthority: @unchecked Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: openssl)
         process.arguments = arguments
-        let out = Pipe()
-        let err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
+        // one pipe for both streams: nothing here needs them apart, and no helper thread has to compete for a worker
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
         process.standardInput = FileHandle.nullDevice
         try process.run()
-        // read both pipes before waiting so a chatty child cannot fill one and stall
-        let errData = Mutable()
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.global().async {
-            errData.value = err.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
-        }
-        let outData = out.fileHandleForReading.readDataToEndOfFile()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        group.wait()
+        let text = String(decoding: data, as: UTF8.self)
         guard process.terminationStatus == 0 else {
-            throw CertificateError.openssl(String(decoding: errData.value, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+            throw CertificateError.openssl(text.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        return String(decoding: outData, as: UTF8.self)
-    }
-
-    private final class Mutable: @unchecked Sendable {
-        var value = Data()
+        return text
     }
 }

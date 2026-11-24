@@ -357,3 +357,40 @@ private let jsonHandler: UpstreamServer.Handler = { head, body in
     let flow = try #require(await recorder.waitForFlows(1).first)
     #expect(String(decoding: flow.responseBody, as: UTF8.self) == "hello world")
 }
+
+@Test func clientsThatAreNotInspectedAreForwardedWithoutBeingRecorded() async throws {
+    let authority = try makeAuthority()
+    defer { try? FileManager.default.removeItem(atPath: authority.directory) }
+    let upstream = UpstreamServer(handler: jsonHandler)
+    try upstream.start()
+    defer { upstream.stop() }
+    let recorder = FlowRecorder()
+    var options = ProxyOptions()
+    options.inspects = { $0.app == "SomeSimulatorApp" }   // the test client is "TestApp"
+    let proxy = try startProxy(authority, options: options, recorder: recorder)
+    defer { proxy.stop() }
+    let (data, response) = try await session(proxyPort: proxy.port).data(from: URL(string: "http://127.0.0.1:\(upstream.port)/quiet")!)
+    #expect((response as? HTTPURLResponse)?.statusCode == 200)
+    #expect(String(decoding: data, as: UTF8.self).contains("/quiet"))
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(recorder.flows.isEmpty)
+}
+
+@Test func mobileClientsAreRecognisedByTheirDeviceOrToolchain() {
+    let inspect = ProxyOptions.inspectsMobile
+    #expect(inspect(ClientInfo(app: "MyApp", deviceId: "UDID")))
+    #expect(inspect(ClientInfo(app: "Android (adb)")))
+    #expect(inspect(ClientInfo(app: "Android emulator")))
+    #expect(!inspect(ClientInfo(app: "Slack")))
+    #expect(ProxyOptions().bypasses("gateway.icloud.com") && ProxyOptions().bypasses("apple.com"))
+    #expect(!ProxyOptions().bypasses("example.com"))
+}
+
+@Test func simulatorDevicesAreFoundFromAProcessArgumentVector() {
+    let args = ["/Library/Developer/CoreSimulator/Volumes/iOS/launchd_sim",
+                "/Users/me/Library/Developer/CoreSimulator/Devices/1EB213BB-A1D3-4AF1-A605-811C95037A68/data/var/run/launchd_bootstrap.plist"]
+    #expect(LsofAttribution.udid(inArguments: args) == "1EB213BB-A1D3-4AF1-A605-811C95037A68")
+    #expect(LsofAttribution.udid(inArguments: ["/usr/bin/curl", "-x", "/some/Devices/1EB213BB-A1D3-4AF1-A605-811C95037A68/x"]) == nil)
+    #expect(LsofAttribution.arguments(of: getpid()).first?.isEmpty == false)   // this very process, through sysctl
+    #expect(LsofAttribution.simulatorUDID(ofProcess: Int(getpid())) == nil)
+}

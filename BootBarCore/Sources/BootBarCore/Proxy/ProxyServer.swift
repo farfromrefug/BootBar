@@ -7,7 +7,11 @@ public struct ProxyOptions: Sendable {
     /// Decrypt HTTPS (with the BootBar certificate). When false every CONNECT is tunnelled untouched.
     public var interceptHTTPS = true
     /// Hosts that are tunnelled untouched even when interception is on: `example.com` and `*.example.com`.
-    public var bypassHosts: [String] = []
+    /// Apple's system services pin their certificates, so decrypting them only produces failures.
+    public var bypassHosts: [String] = ProxyOptions.defaultBypassHosts
+    /// Which clients are inspected. The rest are forwarded without being decrypted or shown: with the macOS proxy
+    /// on, every app on the Mac passes through, and most of them do not trust BootBar's certificate.
+    public var inspects: @Sendable (ClientInfo) -> Bool = { _ in true }
     /// Check the certificates of the real servers. Turn off for servers with a private CA.
     public var verifyUpstream = true
     /// Largest body kept for display, per request and per response.
@@ -17,6 +21,14 @@ public struct ProxyOptions: Sendable {
     public var maxConnections = 400
 
     public init() {}
+
+    public static let defaultBypassHosts = ["*.apple.com", "*.icloud.com", "*.mzstatic.com", "*.cdn-apple.com",
+                                            "*.apple-dns.net", "*.push.apple.com", "apple.com", "icloud.com"]
+
+    /// Simulators, and Android devices and emulators reached through adb.
+    public static let inspectsMobile: @Sendable (ClientInfo) -> Bool = { client in
+        client.deviceId != nil || client.app == "Android (adb)" || client.app == "Android emulator"
+    }
 
     func bypasses(_ host: String) -> Bool {
         let host = host.lowercased()
@@ -196,6 +208,14 @@ private final class ProxySession {
         self.client = client
     }
 
+    /// False for clients that are only forwarded.
+    private var inspected: Bool { options.inspects(client) }
+
+    /// Flows of clients that are only forwarded are not reported.
+    private func publish(_ flow: HTTPFlow) {
+        if inspected { server.publish(flow) }
+    }
+
     func run() {
         defer { upstreams.values.forEach { server.untrack($0.channel); $0.channel.close() } }
         let reader = ByteReader(socket)
@@ -223,6 +243,10 @@ private final class ProxySession {
         flow.requestHeaders = head.headers
         flow.bodyLimit = options.bodyLimit
 
+        guard inspected else {
+            tunnel(host: host, port: port, flow: &flow, reason: nil, record: false)
+            return
+        }
         guard options.interceptHTTPS, !options.bypasses(host) else {
             tunnel(host: host, port: port, flow: &flow, reason: options.interceptHTTPS ? "excluded from interception" : nil)
             return
@@ -246,7 +270,7 @@ private final class ProxySession {
             flow.finishedAt = Date()
             flow.error = "TLS handshake with the client failed: \(error)"
             flow.isTunnel = true
-            server.publish(flow)
+            publish(flow)
             return
         }
         server.track(tls)
@@ -263,7 +287,8 @@ private final class ProxySession {
     }
 
     /// Relays bytes untouched in both directions, as a flow that only shows the connection.
-    private func tunnel(host: String, port: Int, flow: inout HTTPFlow, reason: String?, alreadyAccepted: Bool = false) {
+    private func tunnel(host: String, port: Int, flow: inout HTTPFlow, reason: String?, alreadyAccepted: Bool = false,
+                        record: Bool = true) {
         flow.isTunnel = true
         flow.path = reason.map { "(\($0))" } ?? ""
         let upstream: SocketChannel
@@ -274,7 +299,7 @@ private final class ProxySession {
             flow.state = .failed
             flow.error = "\(error)"
             flow.finishedAt = Date()
-            server.publish(flow)
+            if record { publish(flow) }
             return
         }
         server.track(upstream)
@@ -288,11 +313,11 @@ private final class ProxySession {
         flow.state = .receiving
         flow.status = 200
         flow.reason = "Connection Established"
-        server.publish(flow)
+        if record { publish(flow) }
         relayBidirectionally(socket, upstream)
         flow.state = .complete
         flow.finishedAt = Date()
-        server.publish(flow)
+        if record { publish(flow) }
     }
 
     // MARK: One request and its response
@@ -327,7 +352,7 @@ private final class ProxySession {
                             method: request.method, path: path, httpVersion: request.version)
         flow.requestHeaders = request.headers
         flow.bodyLimit = options.bodyLimit
-        server.publish(flow)
+        publish(flow)
 
         // forward in origin form, minus the headers that only concern the proxy
         request.target = path
@@ -357,7 +382,7 @@ private final class ProxySession {
             }
             flow.requestBody = requestCapture.data
             flow.requestBodySize = requestCapture.total
-            server.publish(flow)
+            publish(flow)
 
             // interim responses (100 Continue, 103 Early Hints) go to the client untouched
             var response: HTTPResponseHead
@@ -384,7 +409,7 @@ private final class ProxySession {
             flow.responseHeaders = response.headers
             flow.firstByteAt = Date()
             flow.state = .receiving
-            server.publish(flow)
+            publish(flow)
 
             try channel.write(HTTPProtocol.serialize(response))
             responseStarted = true
@@ -393,7 +418,7 @@ private final class ProxySession {
                 flow.isWebSocket = response.headers.value(for: "Upgrade")?.lowercased() == "websocket"
                 flow.state = .complete
                 flow.finishedAt = Date()
-                server.publish(flow)
+                publish(flow)
                 relayBidirectionally(channel, upstream.channel, clientReader: reader, upstreamReader: upstream.reader)
                 dropUpstream(scheme: scheme, host: host, port: port)
                 return false
@@ -406,7 +431,7 @@ private final class ProxySession {
             flow.responseBodySize = responseCapture.total
             flow.state = .complete
             flow.finishedAt = Date()
-            server.publish(flow)
+            publish(flow)
 
             let upstreamReusable = HTTPProtocol.keepsAlive(version: response.version, headers: response.headers) && framing != .untilClose
             if !upstreamReusable { dropUpstream(scheme: scheme, host: host, port: port) }
@@ -422,7 +447,7 @@ private final class ProxySession {
         flow.state = .failed
         flow.error = message
         flow.finishedAt = Date()
-        server.publish(flow)
+        publish(flow)
         if let status { respond(channel, status: status, text: "BootBar proxy: \(message)") }
     }
 

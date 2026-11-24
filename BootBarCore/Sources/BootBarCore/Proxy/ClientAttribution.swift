@@ -12,7 +12,65 @@ public struct LsofAttribution: ClientAttributing {
 
     public func client(forLocalPort port: Int) -> ClientInfo {
         guard let pid = owningPid(ofPort: port), let path = executablePath(of: pid) else { return .unknown }
-        return Self.describe(pid: pid, executable: path)
+        var info = Self.describe(pid: pid, executable: path)
+        if info.deviceId == nil { info.deviceId = Self.simulatorUDID(ofProcess: pid) }
+        return info
+    }
+
+    private static let cache = NSLock()
+    nonisolated(unsafe) private static var simulatorByPid: [Int: String?] = [:]
+
+    /// The simulator a process runs in. System daemons live in the runtime's own volume, so their path says nothing;
+    /// their parent chain ends at that simulator's `launchd_sim`, whose arguments name the device.
+    static func simulatorUDID(ofProcess pid: Int) -> String? {
+        if let known = cache.withLock({ simulatorByPid[pid] }) { return known }
+        var found: String?
+        var current = Int32(pid)
+        for _ in 0..<8 where current > 1 {
+            if let udid = udid(inArguments: arguments(of: current)) {
+                found = udid
+                break
+            }
+            var info = proc_bsdinfo()
+            guard proc_pidinfo(current, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size)) > 0 else { break }
+            current = Int32(info.pbi_ppid)
+        }
+        cache.withLock { simulatorByPid[pid] = .some(found) }
+        return found
+    }
+
+    static func udid(inArguments arguments: [String]) -> String? {
+        for argument in arguments {
+            let components = argument.split(separator: "/").map(String.init)
+            if let index = components.firstIndex(of: "Devices"), index + 1 < components.count, components[index + 1].count == 36,
+               arguments.contains(where: { $0.contains("launchd_sim") || $0.contains("CoreSimulator") }) {
+                return components[index + 1]
+            }
+        }
+        return nil
+    }
+
+    /// The argument vector of a process, read without spawning anything.
+    static func arguments(of pid: Int32) -> [String] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 8 else { return [] }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return [] }
+        var argc: Int32 = 0
+        memcpy(&argc, buffer, MemoryLayout<Int32>.size)
+        var parts: [String] = []
+        var index = MemoryLayout<Int32>.size
+        // skip the executable path and the padding after it
+        while index < size, buffer[index] != 0 { index += 1 }
+        while index < size, buffer[index] == 0 { index += 1 }
+        while parts.count < Int(argc), index < size {
+            var end = index
+            while end < size, buffer[end] != 0 { end += 1 }
+            parts.append(String(decoding: buffer[index..<end], as: UTF8.self))
+            index = end + 1
+        }
+        return parts
     }
 
     private func owningPid(ofPort port: Int) -> Int? {
