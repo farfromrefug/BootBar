@@ -14,6 +14,7 @@ struct NetworkPanelView: View {
     @AppStorage("networkColumnLayout") private var layoutJSON = ""
     @AppStorage("networkRoutesMac") private var routesMac = true
     @State private var showSetup = false
+    @State private var dismissedTrust: Set<String> = []
     @State private var isAtBottom = true
     @State private var scrollPhase: ScrollPhase = .idle
     @State private var scrollRequest = 0
@@ -203,6 +204,26 @@ struct NetworkPanelView: View {
                 Text("\(device.name) is not sending its traffic here yet.")
                     .font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading)
                 Button("Set Up") { Task { await model.setUp(device) } }.controlSize(.small).disabled(model.isWorking)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(.orange.opacity(0.12))
+            Divider()
+        } else if model.isRunning, device.platform == .android, !dismissedTrust.contains(device.id),
+                  let trust = model.deviceState.androidTrust, trust != .system {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text(trust == .locked
+                     ? "System trust disabled: HTTPS is only decrypted for apps that trust user certificates. This device cannot be rooted (Google Play image or production build); use a Google APIs or AOSP emulator image to decrypt every app."
+                     : "System trust is off: apps that ignore user certificates fail. This device allows root, so the certificate can be trusted by every app.")
+                    .font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading)
+                if trust == .rootable {
+                    Button("Trust System-Wide") { Task { await model.installCertificate(on: device) } }
+                        .controlSize(.small).disabled(model.isWorking)
+                }
+                Button { dismissedTrust.insert(device.id) } label: {
+                    Image(systemName: "xmark").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).help("Hide")
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
             .background(.orange.opacity(0.12))

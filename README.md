@@ -127,6 +127,8 @@ The **Network** toolbar button (or the Logs/Network switch in the panel header) 
 
 When an app rejects the BootBar certificate, that host is passed through untouched from then on (shown as a tunnel), so the app keeps working after its first failed request; installing the certificate again lifts this.
 
+On Android, apps that target Android 7 or later ignore the user certificate store, so only the system store decrypts them all. That needs an emulator image that allows `adb root` (AOSP or Google APIs, not Google Play). BootBar reads the device's state and says so in the setup popover, in a banner above the list ("System trust disabled" with a Trust System-Wide button when the image allows root), and in the helper app. The system certificate lasts until the device restarts.
+
 Limits: HTTP/1.1 only (HTTP/2 and gRPC apps may fail), WebSocket frames are not shown, apps that pin certificates cannot be decrypted, Android apps only trust the user store if they opt in.
 
 ### Keyboard, clipboard and drag & drop

@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 import Security
@@ -469,4 +470,47 @@ private let jsonHandler: UpstreamServer.Handler = { head, body in
     try await Task.sleep(for: .milliseconds(400))
     #expect(recorder.flows.contains { $0.isTunnel && $0.path.contains("does not trust") })
     proxy.forgetPassedThroughHosts()
+}
+
+// MARK: Android trust
+
+private func trustSetup(_ runner: MockShellRunner) throws -> (DeviceProxySetup, CertificateAuthority, Device) {
+    let authority = try makeAuthority()
+    let setup = DeviceProxySetup(runner: runner, sdk: AndroidSDK(root: "/sdk"), authority: authority)
+    let device = Device(id: "emu", name: "Emu", platform: .android, osVersion: "16", state: .running, serial: "emulator-5554")
+    return (setup, authority, device)
+}
+
+@Test func androidTrustIsSystemWhenTheCertificateIsInTheSystemStore() async throws {
+    let runner = MockShellRunner()
+    let (setup, authority, device) = try trustSetup(runner)
+    let pem = try #require(FileManager.default.contents(atPath: authority.certificatePath))
+    let digest = SHA256.hash(data: pem).map { String(format: "%02x", $0) }.joined()
+    runner.responses["/sdk/platform-tools/adb -s emulator-5554 shell getprop ro.build.version.sdk"] = .success("36")
+    // the name of the certificate in the store is its subject hash
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
+    process.arguments = ["x509", "-inform", "PEM", "-subject_hash_old", "-noout", "-in", authority.certificatePath]
+    let out = Pipe(); process.standardOutput = out
+    try process.run(); process.waitUntilExit()
+    let name = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    runner.responses["/sdk/platform-tools/adb -s emulator-5554 shell sha256sum /system/etc/security/cacerts/\(name).0"] = .success("\(digest)  /system/etc/security/cacerts/\(name).0")
+    #expect(await setup.androidTrust(on: device) == .system)
+}
+
+@Test func androidTrustIsRootableOnADebuggableBuildAndLockedOnAProductionOne() async throws {
+    for (debuggable, expected) in [("1", AndroidTrust.rootable), ("0", .locked)] {
+        let runner = MockShellRunner()
+        let (setup, _, device) = try trustSetup(runner)
+        runner.responses["/sdk/platform-tools/adb -s emulator-5554 shell getprop ro.build.version.sdk"] = .success("36")
+        runner.responses["/sdk/platform-tools/adb -s emulator-5554 shell getprop ro.debuggable"] = .success(debuggable + "\n")
+        #expect(await setup.androidTrust(on: device) == expected)
+    }
+}
+
+@Test func androidTrustIsUnknownWithoutADevice() async throws {
+    let runner = MockShellRunner()
+    let (setup, _, device) = try trustSetup(runner)
+    runner.responses["/sdk/platform-tools/adb -s emulator-5554 shell getprop ro.build.version.sdk"] = .failure(ShellError(command: "adb", exitCode: 1, stderr: "offline"))
+    #expect(await setup.androidTrust(on: device) == nil)
 }

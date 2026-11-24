@@ -244,6 +244,9 @@ public final class NetworkViewModel {
         case (.ios, false): state.proxyConfigured = isRoutingMac
         case (.android, _):
             state.proxyConfigured = await setup.isAndroidProxyEnabled(on: device, port: port)
+            // the system store is what counts for most apps, and it is emptied by a restart: ask the device, not the record
+            state.androidTrust = await setup.androidTrust(on: device)
+            state.certificateInstalled = state.androidTrust == .system
             // a certificate in the user store cannot be seen from here, but decrypted traffic proves it works
             state = merging(state, evidence: trafficEvidence())
         case (.ios, true): state = merging(state, evidence: trafficEvidence())
@@ -269,7 +272,7 @@ public final class NetworkViewModel {
         server?.forgetPassedThroughHosts()
         do {
             do {
-                if !setup.isCertificateInstalled(on: device) { setupMessage = try await setup.installCertificate(on: device) }
+                if try await needsCertificate(device, setup) { setupMessage = try await setup.installCertificate(on: device) }
             } catch {
                 // the proxy setting is still worth applying: plain HTTP works without the certificate
                 setupMessage = ErrorMessage.friendly(error)
@@ -286,6 +289,17 @@ public final class NetworkViewModel {
             setupMessage = ErrorMessage.friendly(error)
         }
         await refreshDeviceState()
+    }
+
+    private func needsCertificate(_ device: Device, _ setup: DeviceProxySetup) async throws -> Bool {
+        guard device.platform == .android else { return !setup.isCertificateInstalled(on: device) }
+        // the system store is read from the device; a user-store certificate only shows by decrypted traffic,
+        // and is all a device that cannot be rooted can get
+        switch await setup.androidTrust(on: device) {
+        case .system: return false
+        case .rootable: return true
+        case .locked, nil: return !trafficEvidence().decrypted
+        }
     }
 
     /// Phones go over the network: listen there, and say what to do on the phone.

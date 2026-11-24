@@ -13,7 +13,7 @@ struct DeviceSetupView: View {
             Text("Set up \(device.name)").font(.headline)
             step("Proxy is running", done: model.isRunning,
                  detail: model.isRunning ? "Listening on 127.0.0.1:\(model.port)" : "Press Capture, or Set Up below")
-            step("Certificate is trusted", done: model.deviceState.certificateInstalled, detail: certificateDetail)
+            step("Certificate is trusted", done: certificateDone, warning: certificateWarning, detail: certificateDetail)
             step(proxyTitle, done: model.deviceState.proxyConfigured, detail: proxyDetail)
             if let message = model.setupMessage {
                 Text(message).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -82,12 +82,31 @@ struct DeviceSetupView: View {
     private var certificateDetail: String {
         if isPhone { return "Open http://bootbar.proxy in Safari, install the profile and trust it in Certificate Trust Settings" }
         if device.state != .running { return "Start the device first" }
-        return device.platform == .android ? "System store on a rootable emulator, otherwise the user store" : "Added to the simulator's keychain"
+        guard device.platform == .android else { return "Added to the simulator's keychain" }
+        switch model.deviceState.androidTrust {
+        case .system: return "In the system store: every app trusts it, until the device restarts"
+        case .rootable: return "Not in the system store yet. This device allows root, so Set Up installs it for every app"
+        case .locked:
+            return "System trust disabled: this device cannot be rooted (a Google Play image or a production build). "
+                + "Only apps that trust user certificates, such as browsers and debug builds, are decrypted. "
+                + "Use a Google APIs or AOSP emulator image to decrypt every app"
+        case nil: return "System store on a rootable emulator, otherwise the user store"
+        }
     }
 
-    private func step(_ title: String, done: Bool, detail: String) -> some View {
+    /// Android apps ignore the user store, so a certificate only there is not a full success.
+    private var certificateDone: Bool {
+        device.platform == .android ? model.deviceState.androidTrust == .system : model.deviceState.certificateInstalled
+    }
+
+    private var certificateWarning: Bool {
+        device.platform == .android && model.deviceState.androidTrust == .locked
+    }
+
+    private func step(_ title: String, done: Bool, warning: Bool = false, detail: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: done ? "checkmark.circle.fill" : "circle").foregroundStyle(done ? Color.green : Color.secondary)
+            Image(systemName: warning ? "exclamationmark.triangle.fill" : done ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(warning ? Color.orange : done ? Color.green : Color.secondary)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 12, weight: .medium))
                 Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

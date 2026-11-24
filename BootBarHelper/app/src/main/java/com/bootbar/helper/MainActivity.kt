@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -29,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var title: TextView
     private lateinit var subtitle: TextView
     private lateinit var action: Button
+    private lateinit var trust: TextView
     private lateinit var host: EditText
     private lateinit var port: EditText
     private var quiet = false
@@ -67,6 +69,7 @@ class MainActivity : Activity() {
             stateListAnimator = null
             setOnClickListener { onAction() }
         }
+        trust = TextView(this).apply { textSize = 13f; setLineSpacing(0f, 1.15f); setPadding(dp(16), dp(12), dp(16), dp(12)) }
         host = field("Proxy address", settings.host, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         port = field("Port", settings.port.toString(), InputType.TYPE_CLASS_NUMBER)
 
@@ -103,7 +106,8 @@ class MainActivity : Activity() {
                 addView(title, margin(top = 20))
                 addView(subtitle, margin(top = 8, side = 16))
                 addView(action, margin(top = 28, height = 52))
-                addView(card, margin(top = 36))
+                addView(trust, margin(top = 28))
+                addView(card, margin(top = 16))
             })
         })
         // dark icons in the status bar when the screen is light (needs the window's decor view, so after setContentView)
@@ -128,6 +132,7 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         Bridge.listen(listener)
+        renderTrust()
         // the process may have been killed: bring the watcher back if it should be running
         if (Settings(this).automatic && !Bridge.watching) startWatching()
     }
@@ -223,6 +228,20 @@ class MainActivity : Activity() {
         action.text = button
         action.background = rounded(if (phase == Phase.OFF || phase == Phase.NEEDS_PERMISSION) accent else if (night) 0xFF2A2F37.toInt() else 0xFF14171A.toInt(), 26)
         action.visibility = View.VISIBLE
+    }
+
+    /** Says whether HTTPS can be read: apps that ignore the user certificate store only work with a system certificate. */
+    private fun renderTrust() {
+        val (color, text) = when (Trust.read()) {
+            Trust.SYSTEM -> 0xFF22C55E.toInt() to "HTTPS is decrypted for every app: BootBar's certificate is in the system store."
+            Trust.USER -> 0xFFF59E0B.toInt() to "System trust disabled. BootBar's certificate is only in the user store, so HTTPS is decrypted only for apps that trust user certificates (browsers, debug builds). Most apps will fail." +
+                if (Build.TYPE == "user") " This device cannot be rooted: use a Google APIs or AOSP emulator image." else " Press Set Up in BootBar to trust it system-wide."
+            Trust.MISSING_ROOTABLE -> 0xFFF59E0B.toInt() to "BootBar's certificate is not trusted yet. Press Set Up in BootBar and it installs it for every app."
+            Trust.MISSING_LOCKED -> 0xFFEF4444.toInt() to "BootBar's certificate is not trusted, and this device cannot be rooted (a Google Play image or production build). Install it from Settings; only apps that trust user certificates will be decrypted. A Google APIs or AOSP emulator image decrypts every app."
+        }
+        trust.text = text
+        trust.setTextColor(primary)
+        trust.background = rounded((color and 0x00FFFFFF) or 0x26000000, 14, color)
     }
 
     private companion object {

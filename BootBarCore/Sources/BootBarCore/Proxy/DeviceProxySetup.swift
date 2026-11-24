@@ -1,16 +1,31 @@
 import CryptoKit
 import Foundation
 
+/// How far an Android device trusts BootBar's certificate. Apps that target Android 7 or later ignore the user
+/// store, so only `system` decrypts them all.
+public enum AndroidTrust: Equatable, Sendable {
+    /// The certificate is in the system store: every app trusts it (until the device restarts).
+    case system
+    /// Not there yet, but the device lets adb become root, so Set Up can put it there.
+    case rootable
+    /// A production build (a Google Play image, a phone): adb cannot become root, so only the user store is left.
+    case locked
+}
+
 /// What was done on a device to make its traffic visible, so the panel can show a checklist.
 public struct DeviceProxyState: Equatable, Sendable {
     public var certificateInstalled = false
     public var proxyConfigured = false
+    /// Android only: whether apps in general trust the certificate; nil when unknown.
+    public var androidTrust: AndroidTrust?
     /// What the user still has to do by hand, when something could not be automated.
     public var note: String?
 
-    public init(certificateInstalled: Bool = false, proxyConfigured: Bool = false, note: String? = nil) {
+    public init(certificateInstalled: Bool = false, proxyConfigured: Bool = false,
+                androidTrust: AndroidTrust? = nil, note: String? = nil) {
         self.certificateInstalled = certificateInstalled
         self.proxyConfigured = proxyConfigured
+        self.androidTrust = androidTrust
         self.note = note
     }
 }
@@ -35,6 +50,8 @@ public struct DeviceProxySetup: Sendable {
     /// The small VPN app that points an Android device at the proxy; without it the global proxy setting is used.
     private let helperAPK: String?
     public static let helperPackage = "com.bootbar.helper"
+    /// `versionCode` of the bundled helper: a device with an older one gets the new build.
+    public static let helperVersion = 2
 
     public init(runner: any ShellRunner = ProcessShellRunner(), sdk: AndroidSDK?, authority: CertificateAuthority,
                 helperAPK: String? = nil,
@@ -106,7 +123,20 @@ public struct DeviceProxySetup: Sendable {
 
         _ = try await adb(device, ["push", authority.certificatePath, "/sdcard/Download/BootBar-CA.crt"])
         _ = try? await adb(device, ["shell", "am", "start", "-a", "android.settings.SECURITY_SETTINGS"])
-        return "This device cannot be rooted (a Google Play image), so BootBar-CA.crt can only go in the user store: install it in Settings → Security → Encryption & credentials → Install a certificate → CA certificate. Browsers will be decrypted, but most apps ignore the user store and fail with \"Trust anchor for certification path not found\". To decrypt every app, use an emulator with an AOSP or Google APIs image (not Google Play): Set Up then trusts the certificate system-wide. For your own app, add <debug-overrides><trust-anchors><certificates src=\"user\"/></trust-anchors></debug-overrides> to its network security config. Stop Routing gives the other apps their network back."
+        return "This device cannot be rooted (a Google Play image or a production build), so BootBar-CA.crt can only go in the user store: install it in Settings → Security → Encryption & credentials → Install a certificate → CA certificate. Browsers will be decrypted, but most apps ignore the user store and fail with \"Trust anchor for certification path not found\". To decrypt every app, use an emulator with an AOSP or Google APIs image (not Google Play): Set Up then trusts the certificate system-wide. For your own app, add <debug-overrides><trust-anchors><certificates src=\"user\"/></trust-anchors></debug-overrides> to its network security config. Stop Routing gives the other apps their network back."
+    }
+
+    /// Reads whether the system store of the device has this certificate, without changing anything. Apps that
+    /// ignore the user store need it there.
+    public func androidTrust(on device: Device) async -> AndroidTrust? {
+        guard let hash = try? await subjectHash(),
+              let pem = FileManager.default.contents(atPath: authority.certificatePath),
+              (try? await adb(device, ["shell", "getprop", "ro.build.version.sdk"])) != nil else { return nil }
+        let local = SHA256.hash(data: pem).map { String(format: "%02x", $0) }.joined()
+        let installed = (try? await adb(device, ["shell", "sha256sum", "/system/etc/security/cacerts/\(hash).0"])) ?? ""
+        if installed.contains(local) { return .system }
+        let debuggable = (try? await adb(device, ["shell", "getprop", "ro.debuggable"])) ?? ""
+        return debuggable.trimmingCharacters(in: .whitespacesAndNewlines) == "1" ? .rootable : .locked
     }
 
     private func subjectHash() async throws -> String {
@@ -223,8 +253,9 @@ public struct DeviceProxySetup: Sendable {
     }
 
     private func installHelperIfNeeded(_ device: Device, apk: String) async throws {
-        let installed = (try? await adb(device, ["shell", "pm", "path", Self.helperPackage])) ?? ""
-        if installed.contains("package:") { return }
+        let installed = (try? await adb(device, ["shell", "dumpsys", "package", Self.helperPackage])) ?? ""
+        if let range = installed.range(of: #"versionCode=(\d+)"#, options: .regularExpression),
+           let version = Int(installed[range].dropFirst("versionCode=".count)), version >= Self.helperVersion { return }
         _ = try await adb(device, ["install", "-r", "-g", apk])
     }
 }

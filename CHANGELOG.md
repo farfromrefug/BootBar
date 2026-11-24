@@ -11,6 +11,7 @@ All notable changes to BootBar are documented here.
 - Network: a small Kotlin helper app (VPN) that points Android devices at the proxy; it connects when BootBar starts capturing and disconnects when it stops, and shows its state
 - Network: iPhones and iPads over Wi-Fi (the proxy listens on the network on request, `http://bootbar.proxy` serves the certificate), and a proxy port setting (automatic by default: 8899, or a free port when taken)
 - Network: a host whose app rejected the BootBar certificate is tunnelled afterwards instead of failing again
+- Network: Android shows whether the certificate is trusted by every app (system store), could be (the image allows root) or cannot be (a Google Play image or production build), in the setup checklist, a dismissible banner and the helper app; the helper is updated on the device when BootBar bundles a newer one
 - The log and network panels share their column, app filter and resize code
 - Android: start without sound, as a global option (device menu then offers Start with Sound) and as a per-launch menu entry
 - Android: extra emulator arguments applied to every start, cold boot and wipe
