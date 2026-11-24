@@ -8,7 +8,7 @@
 
 ## Reporting a Vulnerability
 
-Please report vulnerabilities privately via GitHub's **"Report a vulnerability"** button (Security tab) or email deependrsharma55@gmail.com.
+Please report vulnerabilities privately via GitHub's **"Report a vulnerability"** button (Security tab) (the repository's private vulnerability reporting). Please do not open a public issue for a vulnerability.
 
 Do not open a public issue for security reports.
 
