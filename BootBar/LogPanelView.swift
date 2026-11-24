@@ -6,6 +6,7 @@ import SwiftUI
 struct LogPanelView: View {
     let device: Device
     let model: LogViewModel
+    let kind: Binding<PanelKind>
     let isFull: Bool
     let onToggleFull: () -> Void
     let onClose: () -> Void
@@ -44,7 +45,7 @@ struct LogPanelView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Label("Logs", systemImage: "text.alignleft").font(.system(size: 12, weight: .semibold))
+            PanelKindPicker(kind: kind)
             status
             Spacer()
             headerButton(model.isPaused ? "play.fill" : "pause.fill", model.isPaused ? "Resume" : "Pause") {

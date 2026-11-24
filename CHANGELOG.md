@@ -6,6 +6,9 @@ All notable changes to BootBar are documented here.
 
 ### Added
 
+- Network panel: capture and inspect the HTTP and HTTPS requests of iOS simulators and Android devices, with search (URL, headers, bodies, regex), method/status/app filters, headers, query parameters, request and response bodies, pretty JSON and image previews, timing, copy (URL, cURL, headers, bodies) and save response
+- Built-in intercepting proxy in Swift with an on-the-fly certificate authority, and Set Up actions that trust the certificate and route the device (simulator keychain and macOS proxy, `adb reverse` and the Android proxy setting)
+- The log and network panels share their column, app filter and resize code
 - Android: start without sound, as a global option (device menu then offers Start with Sound) and as a per-launch menu entry
 - Android: extra emulator arguments applied to every start, cold boot and wipe
 - Per-device tools for simulators and emulators: screenshot, screen recording, dark/light mode, open URL, install app (file, archive or URL), app list with launch/stop/uninstall, location, logs, shell, and platform extras

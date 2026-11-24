@@ -147,6 +147,24 @@ public final class NetworkViewModel {
         SystemProxy().restoreNow()
     }
 
+    /// For quitting: Android devices keep the proxy setting after the app is gone, which would cut their network.
+    public func restoreAndroidForQuit() {
+        guard let sdk = locateSDK() else { return }
+        for device in configuredAndroid.values {
+            guard let serial = device.serial else { continue }
+            for arguments in [["shell", "settings", "put", "global", "http_proxy", ":0"], ["reverse", "--remove", "tcp:\(port)"]] {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: sdk.adbPath)
+                process.arguments = ["-s", serial] + arguments
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                try? process.run()
+                process.waitUntilExit()
+            }
+        }
+        configuredAndroid = [:]
+    }
+
     // MARK: Device
 
     public func select(_ device: Device) async {

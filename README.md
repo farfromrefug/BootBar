@@ -114,6 +114,16 @@ The **Logs** toolbar button opens the selected device's log at the bottom of the
 - **Selecting and copying:** click a line, Shift-click to extend, Command-click to toggle, Command-A for all. Cmd+C or the context menu copies the selected lines with line breaks; *Copy Messages* copies only the messages, also one per line. The copy button in the header copies everything visible.
 - Pause keeps collecting without scrolling. The buffer holds 50,000 lines by default; Settings → Logs changes it (5,000 to 500,000).
 
+### Network
+
+The **Network** toolbar button (or the Logs/Network switch in the panel header) shows the HTTP and HTTPS requests of the selected simulator or Android device, in the spirit of Proxyman and HTTP Toolkit.
+
+- **Capture** starts BootBar's own proxy (port 8899). **Set Up** does what the device needs: it trusts BootBar's certificate (`simctl keychain add-root-cert` on a simulator; the system store on a rootable Android emulator, otherwise the user store plus a pointer to the security settings) and points the device at the proxy (the macOS web proxy for simulators; `adb reverse` and the global proxy setting for Android).
+- While capturing, other apps on the Mac are passed through untouched and are not recorded. Apple hosts are tunnelled, not decrypted. The macOS proxy settings are put back when you stop, quit, or relaunch after a crash.
+- Click a request for Headers, Request, Response (Preview or Raw: pretty JSON, images, text, hex) and Timing. Right-click for Copy URL, Copy as cURL, headers and bodies, and Save Response.
+
+Limits: HTTP/1.1 only (HTTP/2 and gRPC apps may fail), WebSocket frames are not shown, apps that pin certificates cannot be decrypted, Android apps only trust the user store if they opt in, and iPhones are not supported yet.
+
 ### Keyboard, clipboard and drag & drop
 
 - **Keyboard** (Android): click the picture and type. Text, Return, Delete, Tab, arrows and Esc (Back) go to the device; Cmd+C / X / A / V copy, cut, select all and paste. With the adb fallback engine only typing and special keys work.

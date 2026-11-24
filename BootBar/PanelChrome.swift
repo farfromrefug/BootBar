@@ -11,6 +11,20 @@ enum PanelMode: String {
     case hidden, split, full
 }
 
+/// Switches the bottom panel between the log and the network traffic.
+struct PanelKindPicker: View {
+    @Binding var kind: PanelKind
+
+    var body: some View {
+        Picker("", selection: $kind) {
+            Text("Logs").tag(PanelKind.logs)
+            Text("Network").tag(PanelKind.network)
+        }
+        .pickerStyle(.segmented).labelsHidden().fixedSize()
+        .controlSize(.small)
+    }
+}
+
 // MARK: Columns
 
 /// Column titles for a table-like panel: drag to reorder, drag the edge to resize, right-click to hide columns.
@@ -132,17 +146,20 @@ struct AppFilterPopover: View {
     let onCurrentApp: () -> Void
     let loadYourApps: () async -> Void
     var seenTitle = "Seen in the log"
+    var showsCurrentApp = true
     @State private var search = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Button(action: onCurrentApp) {
-                    Label("Current app", systemImage: "scope")
+                if showsCurrentApp {
+                    Button(action: onCurrentApp) {
+                        Label("Current app", systemImage: "scope")
+                    }
+                    .controlSize(.small)
+                    .disabled(isFindingApp)
+                    if isFindingApp { ProgressView().controlSize(.mini) }
                 }
-                .controlSize(.small)
-                .disabled(isFindingApp)
-                if isFindingApp { ProgressView().controlSize(.mini) }
                 Spacer()
                 Button("All apps") { selection = [] }
                     .controlSize(.small)
@@ -212,19 +229,22 @@ struct AppFilterButton: View {
     let onCurrentApp: () -> Void
     let loadYourApps: () async -> Void
     var seenTitle = "Seen in the log"
+    var showsCurrentApp = true
     @State private var showing = false
 
     var body: some View {
         HStack(spacing: 6) {
-            Button(action: onCurrentApp) {
-                if isFindingApp {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    Image(systemName: "scope")
+            if showsCurrentApp {
+                Button(action: onCurrentApp) {
+                    if isFindingApp {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "scope")
+                    }
                 }
+                .buttonStyle(.plain)
+                .help("Show only the app in the foreground")
             }
-            .buttonStyle(.plain)
-            .help("Show only the app in the foreground")
 
             Button { showing.toggle() } label: {
                 HStack(spacing: 3) {
@@ -238,7 +258,7 @@ struct AppFilterButton: View {
             .popover(isPresented: $showing, arrowEdge: .bottom) {
                 AppFilterPopover(apps: apps, yourApps: yourApps, selection: $selection, isFindingApp: isFindingApp,
                                  message: message, onCurrentApp: onCurrentApp, loadYourApps: loadYourApps,
-                                 seenTitle: seenTitle)
+                                 seenTitle: seenTitle, showsCurrentApp: showsCurrentApp)
             }
         }
     }

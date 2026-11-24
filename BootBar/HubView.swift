@@ -12,8 +12,10 @@ struct HubView: View {
     @AppStorage("hubShowsInspector") private var showInspector = true
     @AppStorage("hubLogMode") private var logModeRaw = PanelMode.hidden.rawValue
     @AppStorage("hubLogHeight") private var logHeight = 280.0
+    @AppStorage("hubPanelKind") private var panelKindRaw = PanelKind.logs.rawValue
     @AppStorage(Preferences.logBufferKey) private var logBuffer = 50_000
     @State private var logs = LogViewModel(defaults: .standard) { Preferences.locateSDK() }
+    @Environment(NetworkViewModel.self) private var network
     @State private var dropTargeted = false
     @State private var window: NSWindow?
     @State private var fitTask: Task<Void, Never>?
@@ -53,11 +55,20 @@ struct HubView: View {
                 .help("Show the live screen of the selected device")
             }
             ToolbarItem {
-                Toggle(isOn: Binding(get: { logMode != .hidden && showInspector }, set: toggleLogs)) {
+                Toggle(isOn: Binding(get: { logMode != .hidden && showInspector && panelKind == .logs },
+                                     set: { togglePanel(.logs, on: $0) })) {
                     Label("Logs", systemImage: "text.alignleft")
                 }
                 .toggleStyle(.button)
                 .help("Show the log of the selected device")
+            }
+            ToolbarItem {
+                Toggle(isOn: Binding(get: { logMode != .hidden && showInspector && panelKind == .network },
+                                     set: { togglePanel(.network, on: $0) })) {
+                    Label("Network", systemImage: "network")
+                }
+                .toggleStyle(.button)
+                .help("Show the HTTP and HTTPS requests of the selected device")
             }
             ToolbarItem {
                 Toggle(isOn: $showInspector) {
@@ -180,9 +191,17 @@ struct HubView: View {
                                 if logMode == .split {
                                     PanelResizeHandle(height: $logHeight, available: geometry.size.height)
                                 }
-                                LogPanelView(device: device, model: logs, isFull: logMode == .full,
-                                             onToggleFull: { logModeRaw = (logMode == .full ? PanelMode.split : .full).rawValue },
-                                             onClose: { logModeRaw = PanelMode.hidden.rawValue })
+                                Group {
+                                    if panelKind == .network {
+                                        NetworkPanelView(device: device, model: network, kind: kindBinding, isFull: logMode == .full,
+                                                         onToggleFull: { logModeRaw = (logMode == .full ? PanelMode.split : .full).rawValue },
+                                                         onClose: { logModeRaw = PanelMode.hidden.rawValue })
+                                    } else {
+                                        LogPanelView(device: device, model: logs, kind: kindBinding, isFull: logMode == .full,
+                                                     onToggleFull: { logModeRaw = (logMode == .full ? PanelMode.split : .full).rawValue },
+                                                     onClose: { logModeRaw = PanelMode.hidden.rawValue })
+                                    }
+                                }
                                     .frame(height: logMode == .split ? min(logHeight, max(geometry.size.height - 160, 120)) : nil)
                                     .frame(maxHeight: logMode == .full ? .infinity : nil)
                             }
@@ -198,8 +217,8 @@ struct HubView: View {
                 .onAppear { scheduleFit(detailWidth: geometry.size.width, mirrorWidth: mirrorWidth) }
             }
             .task(id: LogKey(deviceId: device.id, running: device.state == .running,
-                             visible: logMode != .hidden && (showInspector || !showMirror))) {
-                if device.state == .running, logMode != .hidden, showInspector || !showMirror {
+                             visible: logMode != .hidden && panelKind == .logs && (showInspector || !showMirror))) {
+                if device.state == .running, logMode != .hidden, panelKind == .logs, showInspector || !showMirror {
                     logs.start(device)
                 } else {
                     logs.stop()
@@ -261,11 +280,18 @@ struct HubView: View {
         let visible: Bool
     }
 
-    private func toggleLogs(_ on: Bool) {
+    private var panelKind: PanelKind { PanelKind(rawValue: panelKindRaw) ?? .logs }
+
+    private var kindBinding: Binding<PanelKind> {
+        Binding(get: { panelKind }, set: { panelKindRaw = $0.rawValue })
+    }
+
+    private func togglePanel(_ kind: PanelKind, on: Bool) {
         if on {
             showInspector = true
+            panelKindRaw = kind.rawValue
             logModeRaw = (logMode == .hidden ? PanelMode.split : logMode).rawValue
-        } else {
+        } else if panelKind == kind {
             logModeRaw = PanelMode.hidden.rawValue
         }
     }

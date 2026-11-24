@@ -36,6 +36,8 @@ final class InstallRequestCenter {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Set when the window first opens; capturing only starts from there.
+    @MainActor static var network: NetworkViewModel?
     private var signalSources: [DispatchSourceSignal] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -62,6 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static func cleanUp() {
         VirtualCameraViewModel.disarmForQuit()
+        // the Mac's proxy settings and the Android devices must not keep pointing at a proxy that is gone
+        MainActor.assumeIsolated { network?.restoreAndroidForQuit() }
+        NetworkViewModel.restoreSystemProxyForQuit()
         ChildProcesses.shared.terminateAll()
     }
 
