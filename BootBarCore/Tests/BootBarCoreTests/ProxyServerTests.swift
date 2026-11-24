@@ -381,6 +381,7 @@ private let jsonHandler: UpstreamServer.Handler = { head, body in
     #expect(inspect(ClientInfo(app: "MyApp", deviceId: "UDID")))
     #expect(inspect(ClientInfo(app: "Android (adb)")))
     #expect(inspect(ClientInfo(app: "Android emulator")))
+    #expect(inspect(ClientInfo(app: "Device 192.168.1.20", remoteAddress: "192.168.1.20")))
     #expect(!inspect(ClientInfo(app: "Slack")))
     #expect(ProxyOptions().bypasses("gateway.icloud.com") && ProxyOptions().bypasses("apple.com"))
     #expect(!ProxyOptions().bypasses("example.com"))
@@ -393,4 +394,42 @@ private let jsonHandler: UpstreamServer.Handler = { head, body in
     #expect(LsofAttribution.udid(inArguments: ["/usr/bin/curl", "-x", "/some/Devices/1EB213BB-A1D3-4AF1-A605-811C95037A68/x"]) == nil)
     #expect(LsofAttribution.arguments(of: getpid()).first?.isEmpty == false)   // this very process, through sysctl
     #expect(LsofAttribution.simulatorUDID(ofProcess: Int(getpid())) == nil)
+}
+
+@Test func theProxyServesTheCertificateToPhonesAndIsNotRecorded() async throws {
+    let authority = try makeAuthority()
+    defer { try? FileManager.default.removeItem(atPath: authority.directory) }
+    let recorder = FlowRecorder()
+    let proxy = try startProxy(authority, recorder: recorder)
+    defer { proxy.stop() }
+    // a phone that typed the proxy's own address, and one that went through the proxy to bootbar.proxy
+    for url in ["http://127.0.0.1:\(proxy.port)/ca.crt", "http://bootbar.proxy/ca.crt"] {
+        let result = try await curl(proxyPort: proxy.port, url: url)
+        #expect(result.code == "200")
+        #expect(result.body.hasPrefix("-----BEGIN CERTIFICATE-----"))
+    }
+    let page = try await curl(proxyPort: proxy.port, url: "http://bootbar.proxy/")
+    #expect(page.body.contains("Download the certificate"))
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(recorder.flows.isEmpty)
+}
+
+@Test func aPortOfZeroPicksAFreePortAndABusyOneIsReported() throws {
+    let authority = try makeAuthority()
+    defer { try? FileManager.default.removeItem(atPath: authority.directory) }
+    var options = ProxyOptions()
+    options.port = 0
+    let first = ProxyServer(authority: authority, attribution: NoAttribution(), options: options) { _ in }
+    try first.start()
+    defer { first.stop() }
+    #expect(first.port > 0)
+    options.port = first.port
+    let second = ProxyServer(authority: authority, attribution: NoAttribution(), options: options) { _ in }
+    #expect(throws: ProxyError.self) { try second.start() }
+}
+
+@Test func localAddressesAreIPv4Numbers() {
+    for address in LocalNetwork.ipv4Addresses() {
+        #expect(address.split(separator: ".").count == 4 && !address.hasPrefix("127."))
+    }
 }

@@ -118,11 +118,13 @@ The **Logs** toolbar button opens the selected device's log at the bottom of the
 
 The **Network** toolbar button (or the Logs/Network switch in the panel header) shows the HTTP and HTTPS requests of the selected simulator or Android device, in the spirit of Proxyman and HTTP Toolkit.
 
-- **Capture** starts BootBar's own proxy (port 8899). **Set Up** does what the device needs: it trusts BootBar's certificate (`simctl keychain add-root-cert` on a simulator; the system store on a rootable Android emulator, otherwise the user store plus a pointer to the security settings) and points the device at the proxy (the macOS web proxy for simulators; `adb reverse` and the global proxy setting for Android).
+- **Capture** starts BootBar's own proxy (port 8899, or a free port when that one is taken; Settings → Network sets a fixed one). **Set Up** does what the device needs: it trusts BootBar's certificate (`simctl keychain add-root-cert` on a simulator; the system store on a rootable Android emulator, otherwise the user store plus a pointer to the security settings) and points the device at the proxy (the macOS web proxy for simulators; `adb reverse` and the global proxy setting for Android).
 - While capturing, other apps on the Mac are passed through untouched and are not recorded. Apple hosts are tunnelled, not decrypted. The macOS proxy settings are put back when you stop, quit, or relaunch after a crash.
 - Click a request for Headers, Request, Response (Preview or Raw: pretty JSON, images, text, hex) and Timing. Right-click for Copy URL, Copy as cURL, headers and bodies, and Save Response.
 
-Limits: HTTP/1.1 only (HTTP/2 and gRPC apps may fail), WebSocket frames are not shown, apps that pin certificates cannot be decrypted, Android apps only trust the user store if they opt in, and iPhones are not supported yet.
+- **iPhone and iPad** (USB or not, on the same Wi-Fi as the Mac): Set Up makes the proxy listen on the local network and shows what to do on the phone: Wi-Fi › Configure Proxy › Manual with the Mac's address and port, then open `http://bootbar.proxy` in Safari to download the certificate, install it, and trust it in Settings › General › About › Certificate Trust Settings. Anyone on that Wi-Fi can use the proxy while it listens there; Stop Routing closes it. The same page works for the Android browser.
+
+Limits: HTTP/1.1 only (HTTP/2 and gRPC apps may fail), WebSocket frames are not shown, apps that pin certificates cannot be decrypted, Android apps only trust the user store if they opt in.
 
 ### Keyboard, clipboard and drag & drop
 

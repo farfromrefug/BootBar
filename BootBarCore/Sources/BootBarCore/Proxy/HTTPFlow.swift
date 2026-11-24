@@ -32,8 +32,12 @@ public struct ClientInfo: Equatable, Sendable {
     public var executable: String?
     /// The simulator the process belongs to.
     public var deviceId: String?
+    /// The address of a phone or tablet on the network, for clients that are not on this Mac.
+    public var remoteAddress: String?
 
-    public init(app: String? = nil, pid: Int? = nil, executable: String? = nil, deviceId: String? = nil) {
+    public init(app: String? = nil, pid: Int? = nil, executable: String? = nil, deviceId: String? = nil,
+                remoteAddress: String? = nil) {
+        self.remoteAddress = remoteAddress
         self.app = app
         self.pid = pid
         self.executable = executable

@@ -14,6 +14,7 @@ struct HubView: View {
     @AppStorage("hubLogHeight") private var logHeight = 280.0
     @AppStorage("hubPanelKind") private var panelKindRaw = PanelKind.logs.rawValue
     @AppStorage(Preferences.logBufferKey) private var logBuffer = 50_000
+    @AppStorage(Preferences.networkPortKey) private var networkPort = 0
     @State private var logs = LogViewModel(defaults: .standard) { Preferences.locateSDK() }
     @Environment(NetworkViewModel.self) private var network
     @State private var dropTargeted = false
@@ -86,6 +87,7 @@ struct HubView: View {
         }
         .onChange(of: router.selection) { _, _ in creating = nil }
         .onChange(of: logBuffer, initial: true) { _, lines in logs.capacity = lines }
+        .onChange(of: networkPort, initial: true) { _, port in network.preferredPort = port > 0 ? port : nil }
         .background(WindowReader { window = $0 })
         // the app is a menu bar agent; while this window is open it also gets a Dock icon
         .onAppear {

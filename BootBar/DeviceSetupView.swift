@@ -29,7 +29,7 @@ struct DeviceSetupView: View {
                 Button("Install Certificate") { Task { await model.installCertificate(on: device) } }
                     .disabled(model.isWorking || unsupported)
                 Button("Stop Routing") { Task { await model.stopRouting(device) } }
-                    .disabled(model.isWorking || !(model.isRoutingMac || model.deviceState.proxyConfigured))
+                    .disabled(model.isWorking || !(model.isRoutingMac || model.deviceState.proxyConfigured || (isPhone && model.allowsNetworkDevices)))
                 if model.isWorking { ProgressView().controlSize(.small) }
             }
             Divider()
@@ -37,6 +37,10 @@ struct DeviceSetupView: View {
                 Toggle("Route this Mac's traffic through the proxy while capturing", isOn: $routesMac)
                     .font(.system(size: 11)).toggleStyle(.checkbox)
                 Text("Simulators use the Mac's proxy settings. Other apps are passed through untouched and are not recorded. The settings are put back when capturing stops or BootBar quits.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if isPhone {
+                Text("Set Up makes the proxy listen on the local network, so anyone on this Wi-Fi can use it while capturing. Stop Routing closes it again.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             HStack {
@@ -57,20 +61,26 @@ struct DeviceSetupView: View {
         .task { await model.refreshDeviceState() }
     }
 
-    private var unsupported: Bool { device.platform == .ios && device.isPhysical || device.state != .running }
+    private var isPhone: Bool { device.platform == .ios && device.isPhysical }
+
+    private var unsupported: Bool { device.state != .running }
 
     private var proxyTitle: String {
-        device.platform == .android ? "Device uses the proxy" : "Mac routes traffic to the proxy"
+        if isPhone { return "Phone sends its traffic to this Mac" }
+        return device.platform == .android ? "Device uses the proxy" : "Mac routes traffic to the proxy"
     }
 
     private var proxyDetail: String {
-        if device.platform == .ios && device.isPhysical { return "Not supported for iPhones yet" }
+        if isPhone {
+            let address = model.networkAddress.map { "\($0):\(model.port)" } ?? "this Mac's address, port \(model.port)"
+            return "Wi-Fi › Configure Proxy › Manual: \(address)"
+        }
         if device.state != .running { return "Start the device first" }
         return device.platform == .android ? "adb reverse and the global proxy setting" : "macOS Wi-Fi and Ethernet web proxy"
     }
 
     private var certificateDetail: String {
-        if device.platform == .ios && device.isPhysical { return "Install it from Settings › General › About › Certificate Trust" }
+        if isPhone { return "Open http://bootbar.proxy in Safari, install the profile and trust it in Certificate Trust Settings" }
         if device.state != .running { return "Start the device first" }
         return device.platform == .android ? "System store on a rootable emulator, otherwise the user store" : "Added to the simulator's keychain"
     }

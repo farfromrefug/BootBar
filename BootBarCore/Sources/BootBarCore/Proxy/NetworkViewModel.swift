@@ -36,7 +36,12 @@ public final class NetworkViewModel {
         didSet { if limitsToDevice != oldValue { refilterNow() } }
     }
 
-    public var port = 8899
+    /// The port in use while capturing.
+    public private(set) var port = 8899
+    /// The port the user asked for; nil takes 8899, or a free one when that is taken.
+    public var preferredPort: Int?
+    /// Listen on the local network too, for iPhones and iPads that cannot use the Mac's loopback.
+    public private(set) var allowsNetworkDevices = false
     public var capacity: Int
 
     @ObservationIgnored private var flows: [HTTPFlow] = []
@@ -93,14 +98,9 @@ public final class NetworkViewModel {
         do {
             let authority = try makeAuthority()
             self.authority = authority
-            var options = ProxyOptions()
-            options.port = port
-            options.inspects = ProxyOptions.inspectsMobile
-            let server = ProxyServer(authority: authority, options: options) { [weak self] flow in
-                Task { @MainActor in self?.receive(flow) }
-            }
-            try server.start()
+            let server = try startServer(authority: authority)
             self.server = server
+            port = server.port
             state = .running(port: server.port)
             if routeMac {
                 try await systemProxy.enable(port: server.port)
@@ -112,6 +112,26 @@ public final class NetworkViewModel {
             state = .failed(String(describing: error))
         }
     }
+
+    /// The preferred port, or when none was chosen 8899 and then any free port.
+    private func startServer(authority: CertificateAuthority) throws -> ProxyServer {
+        func attempt(port: Int) throws -> ProxyServer {
+            var options = ProxyOptions()
+            options.port = port
+            options.allowsNetworkClients = allowsNetworkDevices
+            options.inspects = ProxyOptions.inspectsMobile
+            let server = ProxyServer(authority: authority, options: options) { [weak self] flow in
+                Task { @MainActor in self?.receive(flow) }
+            }
+            try server.start()
+            return server
+        }
+        if let preferredPort, preferredPort > 0 { return try attempt(port: preferredPort) }
+        do { return try attempt(port: 8899) } catch { return try attempt(port: 0) }
+    }
+
+    /// Where an iPhone or iPad on the same network points its proxy setting.
+    public var networkAddress: String? { LocalNetwork.ipv4Addresses().first }
 
     public func stop() async {
         server?.stop()
@@ -185,7 +205,7 @@ public final class NetworkViewModel {
         switch (device.platform, device.isPhysical) {
         case (.ios, false): state.proxyConfigured = isRoutingMac
         case (.android, _): state.proxyConfigured = await setup.isAndroidProxyEnabled(on: device, port: port)
-        case (.ios, true): break
+        case (.ios, true): state = phoneState()
         }
         deviceState = state
     }
@@ -196,6 +216,11 @@ public final class NetworkViewModel {
         isWorking = true
         setupMessage = nil
         defer { isWorking = false }
+        if device.platform == .ios, device.isPhysical {
+            await setUpPhone()
+            await refreshDeviceState()
+            return
+        }
         if !isRunning { await start(routeMac: device.platform == .ios) }
         guard isRunning, let authority else { return }
         let setup = DeviceProxySetup(runner: runner, sdk: locateSDK(), authority: authority)
@@ -214,7 +239,25 @@ public final class NetworkViewModel {
         await refreshDeviceState()
     }
 
+    /// Phones go over the network: listen there, and say what to do on the phone.
+    private func setUpPhone() async {
+        if !isRunning || !allowsNetworkDevices {
+            await stop()
+            allowsNetworkDevices = true
+            await start(routeMac: false)
+        }
+        guard isRunning else { return }
+        let address = networkAddress.map { "\($0) port \(port)" } ?? "this Mac's address, port \(port)"
+        setupMessage = "On the phone, on the same Wi-Fi: Settings › Wi-Fi › ⓘ › Configure Proxy › Manual, server and port: \(address). "
+            + "Then open http://bootbar.proxy in Safari, download the certificate, install it in Settings › Profile Downloaded, "
+            + "and turn it on in Settings › General › About › Certificate Trust Settings."
+    }
+
     public func installCertificate(on device: Device) async {
+        if device.platform == .ios, device.isPhysical {
+            await setUp(device)
+            return
+        }
         guard let authority = authority ?? (try? makeAuthority()) else { return }
         self.authority = authority
         isWorking = true
@@ -228,6 +271,16 @@ public final class NetworkViewModel {
     }
 
     public func stopRouting(_ device: Device) async {
+        if device.platform == .ios, device.isPhysical {
+            allowsNetworkDevices = false
+            if isRunning {
+                await stop()
+                await start(routeMac: false)
+            }
+            setupMessage = nil
+            await refreshDeviceState()
+            return
+        }
         if device.platform == .android, let authority {
             try? await DeviceProxySetup(runner: runner, sdk: locateSDK(), authority: authority).disableAndroidProxy(on: device, port: port)
             configuredAndroid[device.id] = nil
@@ -264,6 +317,9 @@ public final class NetworkViewModel {
             appCounts = flows.reduce(into: [:]) { $0[$1.appName, default: 0] += 1 }
             refilterNow()
         }
+        if let device, device.platform == .ios, device.isPhysical, !(deviceState.proxyConfigured && deviceState.certificateInstalled) {
+            deviceState = phoneState()
+        }
         totalCount = flows.count
         apps = appCounts.map { AppCount(name: $0.key, count: $0.value) }.sorted { $0.name < $1.name }
     }
@@ -289,7 +345,18 @@ public final class NetworkViewModel {
         visible.insert(flow, at: position)
     }
 
+    /// A phone's setup cannot be checked from here; it is done once its traffic arrives, decrypted.
+    private func phoneState() -> DeviceProxyState {
+        var state = DeviceProxyState()
+        state.proxyConfigured = flows.contains { $0.client.remoteAddress != nil }
+        state.certificateInstalled = flows.contains { $0.client.remoteAddress != nil && $0.isHTTPS && !$0.isTunnel && $0.status != nil }
+        return state
+    }
+
     private func matches(_ flow: HTTPFlow) -> Bool {
+        if limitsToDevice, let device, device.platform == .ios, device.isPhysical {
+            guard flow.client.remoteAddress != nil else { return false }
+        }
         if limitsToDevice, let device, device.platform == .ios, !device.isPhysical {
             guard flow.client.deviceId == device.id else { return false }
         }

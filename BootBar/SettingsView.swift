@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage(Preferences.showPhysicalDevicesKey) private var showPhysicalDevices = true
     @AppStorage(Preferences.syncClipboardKey) private var syncClipboard = true
     @AppStorage(Preferences.logBufferKey) private var logBuffer = 50_000
+    @AppStorage(Preferences.networkPortKey) private var networkPort = 0
     @State private var launchModel = LaunchAtLoginModel()
     @State private var linkHandler = LinkHandlerModel()
 
@@ -91,6 +92,15 @@ struct SettingsView: View {
                         }
                     }
                     Text("The oldest lines are dropped once the log is full. A larger buffer keeps more history and uses more memory (roughly 200 bytes a line); a simulator can produce well over a thousand lines a second.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            tab("Network", "network") {
+                Section("Proxy") {
+                    TextField("Port", value: $networkPort, format: .number.grouping(.never), prompt: Text("Automatic"))
+                        .frame(maxWidth: 220)
+                    Text("Leave empty or 0 for automatic: port 8899, or a free port when that one is taken. A port you choose is used as is and capturing fails if it is busy. It applies the next time capturing starts.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

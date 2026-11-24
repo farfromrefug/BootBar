@@ -9,6 +9,7 @@ nonisolated enum Preferences {
     static let showPhysicalDevicesKey = "showPhysicalDevices"
     static let syncClipboardKey = "syncClipboard"
     static let logBufferKey = "logBufferLines"
+    static let networkPortKey = "networkPort"
     static let terminalAppKey = "terminalApp"
     static let terminalCustomAppKey = "terminalCustomApp"
 

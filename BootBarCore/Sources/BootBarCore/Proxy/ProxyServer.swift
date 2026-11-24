@@ -3,7 +3,10 @@ import Foundation
 import Security
 
 public struct ProxyOptions: Sendable {
+    /// 0 lets the system pick a free port.
     public var port = 8899
+    /// Also accept phones and tablets on the local network, not just this Mac. They are inspected like simulators.
+    public var allowsNetworkClients = false
     /// Decrypt HTTPS (with the BootBar certificate). When false every CONNECT is tunnelled untouched.
     public var interceptHTTPS = true
     /// Hosts that are tunnelled untouched even when interception is on: `example.com` and `*.example.com`.
@@ -27,7 +30,7 @@ public struct ProxyOptions: Sendable {
 
     /// Simulators, and Android devices and emulators reached through adb.
     public static let inspectsMobile: @Sendable (ClientInfo) -> Bool = { client in
-        client.deviceId != nil || client.app == "Android (adb)" || client.app == "Android emulator"
+        client.deviceId != nil || client.remoteAddress != nil || client.app == "Android (adb)" || client.app == "Android emulator"
     }
 
     func bypasses(_ host: String) -> Bool {
@@ -88,7 +91,8 @@ public final class ProxyServer: @unchecked Sendable {
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = UInt16(options.port).bigEndian
-        address.sin_addr = in_addr(s_addr: UInt32(0x7f000001).bigEndian)   // loopback only
+        // loopback only, unless phones on the network were asked for
+        address.sin_addr = in_addr(s_addr: (options.allowsNetworkClients ? UInt32(0) : UInt32(0x7f000001)).bigEndian)
         let bound = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
@@ -97,7 +101,7 @@ public final class ProxyServer: @unchecked Sendable {
         guard bound == 0, listen(descriptor, 128) == 0 else {
             let reason = String(cString: strerror(errno))
             Darwin.close(descriptor)
-            throw ProxyError.bind("port \(options.port) is not available: \(reason)")
+            throw ProxyError.bind(options.port == 0 ? "no free port: \(reason)" : "port \(options.port) is not available: \(reason)")
         }
         var actual = sockaddr_in()
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
@@ -171,18 +175,32 @@ public final class ProxyServer: @unchecked Sendable {
             socket.close()
             untrack(socket)
         }
-        let client = peerPort(of: socket.descriptor).map { attribution.client(forLocalPort: $0) } ?? .unknown
+        let peer = peer(of: socket.descriptor)
+        let client: ClientInfo
+        if let peer, peer.address != "127.0.0.1" {
+            client = ClientInfo(app: "Device \(peer.address)", remoteAddress: peer.address)
+        } else {
+            client = peer.map { attribution.client(forLocalPort: $0.port) } ?? .unknown
+        }
         let session = ProxySession(server: self, socket: socket, client: client)
         session.run()
     }
 
-    private func peerPort(of descriptor: Int32) -> Int? {
+    private func peer(of descriptor: Int32) -> (address: String, port: Int)? {
         var address = sockaddr_in()
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
         let result = withUnsafeMutablePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getpeername(descriptor, $0, &length) }
         }
-        return result == 0 ? Int(UInt16(bigEndian: address.sin_port)) : nil
+        guard result == 0 else { return nil }
+        let bytes = UInt32(bigEndian: address.sin_addr.s_addr)
+        let text = "\(bytes >> 24).\((bytes >> 16) & 255).\((bytes >> 8) & 255).\(bytes & 255)"
+        return (text, Int(UInt16(bigEndian: address.sin_port)))
+    }
+
+    /// Whether a host name or address leads back to this proxy, so requests for it must not be forwarded to itself.
+    fileprivate func isOwnAddress(_ host: String) -> Bool {
+        host == "localhost" || host == "127.0.0.1" || LocalNetwork.ipv4Addresses().contains(host)
     }
 
     fileprivate func publish(_ flow: HTTPFlow) { onFlow(flow) }
@@ -226,6 +244,7 @@ private final class ProxySession {
                     handleConnect(head, reader: reader)
                     return
                 }
+                if serveLocalPage(head) { return }
                 let keepAlive = exchange(head, reader: reader, client: socket, scheme: "http", fixedAuthority: nil)
                 if !keepAlive { return }
             }
@@ -450,6 +469,45 @@ private final class ProxySession {
         publish(flow)
         if let status { respond(channel, status: status, text: "BootBar proxy: \(message)") }
     }
+
+    /// `http://bootbar.proxy` (through the proxy) or the proxy's own address: the page a phone opens to get the certificate.
+    private func serveLocalPage(_ head: HTTPRequestHead) -> Bool {
+        guard head.method == "GET" || head.method == "HEAD" else { return false }
+        var path = head.target
+        if !path.hasPrefix("/") {
+            guard let url = URL(string: head.target), let host = url.host?.lowercased(),
+                  host == "bootbar.proxy" || (url.port == server.port && server.isOwnAddress(host))
+            else { return false }
+            path = url.path.isEmpty ? "/" : url.path
+        }
+        path = path.split(separator: "?").first.map(String.init) ?? "/"
+        let body: Data
+        let type: String
+        var extra = ""
+        if ["/ca.crt", "/ca.pem", "/cert", "/certificate"].contains(path), let pem = try? server.authorityRef.certificatePEM() {
+            body = Data(pem.utf8)
+            type = "application/x-x509-ca-cert"
+            extra = "Content-Disposition: attachment; filename=\"BootBar.crt\"\r\n"
+        } else {
+            body = Data(Self.landingPage.utf8)
+            type = "text/html; charset=utf-8"
+        }
+        let status = "HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\n\(extra)Cache-Control: no-store\r\nConnection: close\r\nContent-Length: \(body.count)\r\n\r\n"
+        try? socket.write(Data(status.utf8) + (head.method == "HEAD" ? Data() : body))
+        return true
+    }
+
+    private static let landingPage = """
+    <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\
+    <title>BootBar</title><style>body{font:17px -apple-system,system-ui,sans-serif;margin:24px;line-height:1.45}\
+    a.b{display:inline-block;background:#0a84ff;color:#fff;padding:12px 18px;border-radius:10px;text-decoration:none;margin:12px 0}</style></head>\
+    <body><h2>BootBar proxy</h2><p>The traffic of this device goes through BootBar. To read HTTPS, install and trust the BootBar certificate.</p>\
+    <a class="b" href="/ca.crt">Download the certificate</a>\
+    <p><b>iPhone and iPad:</b> allow the download, open Settings › Profile Downloaded and install it, then turn it on in \
+    Settings › General › About › Certificate Trust Settings.</p>\
+    <p><b>Android:</b> Settings › Security › Encryption &amp; credentials › Install a certificate › CA certificate. \
+    Apps only trust it if they opt in to user certificates.</p></body></html>
+    """
 
     private func respond(_ channel: any ByteChannel, status: Int, text: String) {
         let reason = status == 502 ? "Bad Gateway" : "Bad Request"

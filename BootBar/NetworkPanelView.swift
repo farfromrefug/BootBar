@@ -82,7 +82,7 @@ struct NetworkPanelView: View {
 
     private var captureToggle: some View {
         Button {
-            Task { if model.isRunning { await model.stop() } else { await model.start(routeMac: routesMac && device.platform == .ios) } }
+            Task { if model.isRunning { await model.stop() } else { await model.start(routeMac: routesMac && device.platform == .ios && !device.isPhysical) } }
         } label: {
             Label(model.isRunning ? "Stop" : "Capture", systemImage: model.isRunning ? "stop.circle.fill" : "record.circle")
                 .font(.system(size: 11, weight: .medium))
