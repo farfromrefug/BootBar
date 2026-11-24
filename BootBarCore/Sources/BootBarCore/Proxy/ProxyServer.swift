@@ -488,6 +488,9 @@ private final class ProxySession {
             body = Data(pem.utf8)
             type = "application/x-x509-ca-cert"
             extra = "Content-Disposition: attachment; filename=\"BootBar.crt\"\r\n"
+        } else if path == "/ping" {
+            body = Data("BootBar".utf8)   // what the Android helper checks before it connects its VPN
+            type = "text/plain; charset=utf-8"
         } else {
             body = Data(Self.landingPage.utf8)
             type = "text/html; charset=utf-8"

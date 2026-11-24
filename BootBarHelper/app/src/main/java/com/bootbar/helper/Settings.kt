@@ -2,7 +2,7 @@ package com.bootbar.helper
 
 import android.content.Context
 
-/** The proxy address last used, and whether the VPN is up. */
+/** The proxy address BootBar listens on (reached through `adb reverse`), and whether to follow BootBar automatically. */
 class Settings(context: Context) {
     private val preferences = context.getSharedPreferences("bootbar", Context.MODE_PRIVATE)
 
@@ -14,9 +14,10 @@ class Settings(context: Context) {
         get() = preferences.getInt("port", 8899)
         set(value) = preferences.edit().putInt("port", value).apply()
 
-    var running: Boolean
-        get() = preferences.getBoolean("running", false)
-        set(value) = preferences.edit().putBoolean("running", value).apply()
+    /** Connect when BootBar is capturing, disconnect when it stops. */
+    var automatic: Boolean
+        get() = preferences.getBoolean("automatic", false)
+        set(value) = preferences.edit().putBoolean("automatic", value).apply()
 
     fun save(host: String, port: Int) {
         this.host = host

@@ -109,6 +109,7 @@ public final class NetworkViewModel {
                 try await systemProxy.enable(port: server.port)
                 isRoutingMac = true
             }
+            await attachAndroidHelpers()
             await refreshDeviceState()
         } catch {
             server?.stop()
@@ -144,8 +145,11 @@ public final class NetworkViewModel {
             try? await systemProxy.restore()
             isRoutingMac = false
         }
-        for device in configuredAndroid.values {
-            if let authority { try? await makeSetup(authority).disableAndroidProxy(on: device, port: port) }
+        if let authority {
+            let setup = makeSetup(authority)
+            await setup.detachHelpers()
+            // devices that use the global proxy setting instead of the helper must not keep it
+            for device in configuredAndroid.values { try? await setup.disableAndroidProxy(on: device, port: port) }
         }
         configuredAndroid = [:]
         if isRunning { state = .stopped }
@@ -175,6 +179,12 @@ public final class NetworkViewModel {
         SystemProxy().restoreNow()
     }
 
+    /// Lets the helper apps on connected devices reach the proxy; they connect their VPN when they see it.
+    private func attachAndroidHelpers() async {
+        guard let authority else { return }
+        await makeSetup(authority).attachHelpers(port: port)
+    }
+
     private func makeSetup(_ authority: CertificateAuthority) -> DeviceProxySetup {
         DeviceProxySetup(runner: runner, sdk: locateSDK(), authority: authority, helperAPK: helperAPK())
     }
@@ -182,18 +192,32 @@ public final class NetworkViewModel {
     /// For quitting: Android devices keep the proxy setting after the app is gone, which would cut their network.
     public func restoreAndroidForQuit() {
         guard let sdk = locateSDK() else { return }
+        func adb(_ arguments: [String]) -> String {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: sdk.adbPath)
+            process.arguments = arguments
+            let out = Pipe()
+            process.standardOutput = out
+            process.standardError = FileHandle.nullDevice
+            try? process.run()
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return String(decoding: data, as: UTF8.self)
+        }
+        // the helpers drop their VPN once the proxy is gone, but not before their next check
+        if helperAPK() != nil {
+            let serials = adb(["devices"]).split(whereSeparator: \.isNewline).dropFirst().compactMap { line -> String? in
+                let parts = line.split(whereSeparator: \.isWhitespace)
+                return parts.count >= 2 && parts[1] == "device" ? String(parts[0]) : nil
+            }
+            for serial in serials where adb(["-s", serial, "shell", "pm", "path", DeviceProxySetup.helperPackage]).contains("package:") {
+                _ = adb(["-s", serial] + DeviceProxySetup.helperArguments("stop"))
+                _ = adb(["-s", serial, "reverse", "--remove", "tcp:\(DeviceProxySetup.devicePort)"])
+            }
+        }
         for device in configuredAndroid.values {
             guard let serial = device.serial else { continue }
-            for arguments in [DeviceProxySetup.helperArguments("stop", port: port), ["shell", "settings", "put", "global", "http_proxy", ":0"],
-                              ["reverse", "--remove", "tcp:\(port)"]] {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: sdk.adbPath)
-                process.arguments = ["-s", serial] + arguments
-                process.standardOutput = FileHandle.nullDevice
-                process.standardError = FileHandle.nullDevice
-                try? process.run()
-                process.waitUntilExit()
-            }
+            _ = adb(["-s", serial, "shell", "settings", "put", "global", "http_proxy", ":0"])
         }
         configuredAndroid = [:]
     }
@@ -207,6 +231,7 @@ public final class NetworkViewModel {
         }
         self.device = device
         setupMessage = nil
+        if isRunning, device.platform == .android { await attachAndroidHelpers() }
         await refreshDeviceState()
         refilterNow()
     }
@@ -249,7 +274,8 @@ public final class NetworkViewModel {
             }
             if device.platform == .android {
                 try await setup.enableAndroidProxy(on: device, port: port)
-                configuredAndroid[device.id] = device
+                // only devices on the global proxy setting need undoing when capturing stops; the helper does it itself
+                if helperAPK() == nil { configuredAndroid[device.id] = device }
             } else if !isRoutingMac {
                 try await systemProxy.enable(port: port)
                 isRoutingMac = true

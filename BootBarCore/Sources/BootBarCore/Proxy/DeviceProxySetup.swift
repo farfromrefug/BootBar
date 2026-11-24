@@ -152,39 +152,75 @@ public struct DeviceProxySetup: Sendable {
         return true
     }
 
+    /// Where the device reaches the proxy, whatever port BootBar picked: `adb reverse` maps this port to it.
+    public static let devicePort = 8899
+
     public func enableAndroidProxy(on device: Device, port: Int) async throws {
-        _ = try await adb(device, ["reverse", "tcp:\(port)", "tcp:\(port)"])
+        _ = try await adb(device, ["reverse", "tcp:\(Self.devicePort)", "tcp:\(port)"])
         if let helperAPK {
             try await installHelperIfNeeded(device, apk: helperAPK)
             // lets the VPN start without the system's confirmation dialog
             _ = try? await adb(device, ["shell", "appops", "set", Self.helperPackage, "ACTIVATE_VPN", "allow"])
-            _ = try await adb(device, helperCommand("start", port: port))
+            // the helper now follows BootBar: it connects its VPN while the proxy answers and drops it when it stops
+            _ = try await adb(device, Self.helperArguments("watch"))
         } else {
-            _ = try await adb(device, ["shell", "settings", "put", "global", "http_proxy", "127.0.0.1:\(port)"])
+            _ = try await adb(device, ["shell", "settings", "put", "global", "http_proxy", "127.0.0.1:\(Self.devicePort)"])
         }
     }
 
+    /// The user's choice to stop: the helper stops watching too.
     public func disableAndroidProxy(on device: Device, port: Int) async throws {
-        if helperAPK != nil { _ = try? await adb(device, helperCommand("stop", port: port)) }
+        if helperAPK != nil { _ = try? await adb(device, Self.helperArguments("unwatch")) }
         _ = try await adb(device, ["shell", "settings", "put", "global", "http_proxy", ":0"])
-        _ = try? await adb(device, ["reverse", "--remove", "tcp:\(port)"])
+        _ = try? await adb(device, ["reverse", "--remove", "tcp:\(Self.devicePort)"])
     }
 
     public func isAndroidProxyEnabled(on device: Device, port: Int) async -> Bool {
         let value = (try? await adb(device, ["shell", "settings", "get", "global", "http_proxy"])) ?? ""
-        if value.trimmingCharacters(in: .whitespacesAndNewlines) == "127.0.0.1:\(port)" { return true }
+        if value.trimmingCharacters(in: .whitespacesAndNewlines) == "127.0.0.1:\(Self.devicePort)" { return true }
         guard helperAPK != nil else { return false }
         let connectivity = (try? await adb(device, ["shell", "dumpsys", "connectivity"])) ?? ""
         return connectivity.contains("CONNECTED extra: VPN:\(Self.helperPackage)")
     }
 
-    /// Arguments that make the helper app start or stop its VPN.
-    public static func helperArguments(_ command: String, port: Int) -> [String] {
-        ["shell", "am", "start", "-n", "\(helperPackage)/.MainActivity", "--es", "command", command,
-         "--es", "host", "127.0.0.1", "--ei", "port", String(port), "--ez", "quiet", "true"]
+    /// Serials of the connected Android devices that have the helper installed.
+    public func helperDevices() async -> [String] {
+        guard helperAPK != nil, let sdk,
+              let list = try? await runner.run(sdk.adbPath, ["devices"]) else { return [] }
+        let serials = list.split(whereSeparator: \.isNewline).dropFirst().compactMap { line -> String? in
+            let parts = line.split(whereSeparator: \.isWhitespace)
+            return parts.count >= 2 && parts[1] == "device" ? String(parts[0]) : nil
+        }
+        var withHelper: [String] = []
+        for serial in serials {
+            let installed = (try? await runner.run(sdk.adbPath, ["-s", serial, "shell", "pm", "path", Self.helperPackage])) ?? ""
+            if installed.contains("package:") { withHelper.append(serial) }
+        }
+        return withHelper
     }
 
-    private func helperCommand(_ command: String, port: Int) -> [String] { Self.helperArguments(command, port: port) }
+    /// Capturing started: the helpers can reach the proxy again, and connect their VPN by themselves.
+    public func attachHelpers(port: Int) async {
+        guard let sdk else { return }
+        for serial in await helperDevices() {
+            _ = try? await runner.run(sdk.adbPath, ["-s", serial, "reverse", "tcp:\(Self.devicePort)", "tcp:\(port)"])
+        }
+    }
+
+    /// Capturing stopped: the helpers lose the proxy, and drop their VPN at once rather than after their next check.
+    public func detachHelpers() async {
+        guard let sdk else { return }
+        for serial in await helperDevices() {
+            _ = try? await runner.run(sdk.adbPath, ["-s", serial] + Self.helperArguments("stop"))
+            _ = try? await runner.run(sdk.adbPath, ["-s", serial, "reverse", "--remove", "tcp:\(Self.devicePort)"])
+        }
+    }
+
+    /// Arguments that give the helper app a command: `watch`, `unwatch`, `start` or `stop`.
+    public static func helperArguments(_ command: String) -> [String] {
+        ["shell", "am", "start", "-n", "\(helperPackage)/.MainActivity", "--es", "command", command,
+         "--es", "host", "127.0.0.1", "--ei", "port", String(devicePort), "--ez", "quiet", "true"]
+    }
 
     private func installHelperIfNeeded(_ device: Device, apk: String) async throws {
         let installed = (try? await adb(device, ["shell", "pm", "path", Self.helperPackage])) ?? ""

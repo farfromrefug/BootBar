@@ -434,9 +434,18 @@ private let jsonHandler: UpstreamServer.Handler = { head, body in
     }
 }
 
-@Test func helperAppIsStartedAndStoppedThroughItsActivity() {
-    let start = DeviceProxySetup.helperArguments("start", port: 8899)
-    #expect(start.starts(with: ["shell", "am", "start", "-n", "com.bootbar.helper/.MainActivity"]))
-    #expect(start.contains("start") && start.contains("8899") && start.contains("quiet"))
-    #expect(DeviceProxySetup.helperArguments("stop", port: 1).contains("stop"))
+@Test func helperAppIsDrivenThroughItsActivity() {
+    let watch = DeviceProxySetup.helperArguments("watch")
+    #expect(watch.starts(with: ["shell", "am", "start", "-n", "com.bootbar.helper/.MainActivity"]))
+    #expect(watch.contains("watch") && watch.contains("8899") && watch.contains("quiet"))
+    #expect(DeviceProxySetup.helperArguments("stop").contains("stop"))
+}
+
+@Test func thePingPageAnswersTheHelper() async throws {
+    let authority = try makeAuthority()
+    defer { try? FileManager.default.removeItem(atPath: authority.directory) }
+    let proxy = try startProxy(authority, recorder: FlowRecorder())
+    defer { proxy.stop() }
+    let result = try await curl(proxyPort: proxy.port, url: "http://bootbar.proxy/ping")
+    #expect(result.code == "200" && result.body == "BootBar")
 }

@@ -8,7 +8,7 @@ All notable changes to BootBar are documented here.
 
 - Network panel: capture and inspect the HTTP and HTTPS requests of iOS simulators and Android devices, with search (URL, headers, bodies, regex), method/status/app filters, headers, query parameters, request and response bodies, pretty JSON and image previews, timing, copy (URL, cURL, headers, bodies) and save response
 - Built-in intercepting proxy in Swift with an on-the-fly certificate authority, and Set Up actions that trust the certificate and route the device (simulator keychain and macOS proxy, `adb reverse` and the Android proxy setting)
-- Network: a small Kotlin helper app (VPN) that points Android devices at the proxy, installed and started by Set Up
+- Network: a small Kotlin helper app (VPN) that points Android devices at the proxy; it connects when BootBar starts capturing and disconnects when it stops, and shows its state
 - Network: iPhones and iPads over Wi-Fi (the proxy listens on the network on request, `http://bootbar.proxy` serves the certificate), and a proxy port setting (automatic by default: 8899, or a free port when taken)
 - The log and network panels share their column, app filter and resize code
 - Android: start without sound, as a global option (device menu then offers Start with Sound) and as a per-launch menu entry
