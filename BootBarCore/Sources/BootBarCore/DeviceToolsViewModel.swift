@@ -155,6 +155,8 @@ public final class DeviceToolsViewModel {
         case .startRecording: return try await beginRecording(device, path: try await tools.startRecording(device, directory: captureDirectory()))
         case .stopRecording: return try await endRecording(device) { try await tools.stopRecording(device) }
         case .appearance(let dark): try await tools.setAppearance(device, dark: dark); return dark ? "Dark mode on" : "Light mode on"
+        case .toggleAppearance: return try await tools.toggleAppearance(device) ? "Dark mode on" : "Light mode on"
+        case .textSize(let larger): try await tools.changeTextSize(device, larger: larger); return larger ? "Larger text" : "Smaller text"
         case .openURL(let url): try await tools.openURL(device, url); return "Opened URL"
         case .addMedia(let path): try await tools.addMedia(device, path: path); return "Added \((path as NSString).lastPathComponent)"
         case .copyToFiles(let path):
@@ -164,7 +166,7 @@ public final class DeviceToolsViewModel {
         case .location(let latitude, let longitude): try await tools.setLocation(device, latitude: latitude, longitude: longitude); return "Location set"
         case .clearLocation: try await tools.clearLocation(device); return "Location cleared"
         case .statusBar(let clean): try await tools.setCleanStatusBar(device, clean: clean); return clean ? "Status bar set to 9:41" : "Status bar restored"
-        case .shell, .scrcpy, .rotate, .animations, .showTaps, .reboot, .clearData, .pushFile, .relaunch: return nil
+        case .shell, .scrcpy, .rotate, .rotateLeft, .animations, .showTaps, .reboot, .clearData, .pushFile, .relaunch: return nil
         case .logs: try await tools.openLogs(device); return nil
         case .revealStorage: try await tools.revealStorage(device); return nil
         case .launch(let app): try await tools.launch(device, app: app); return nil
@@ -195,10 +197,13 @@ public final class DeviceToolsViewModel {
         case .startRecording: return try await beginRecording(device, path: try await tools.startRecording(device, directory: captureDirectory()))
         case .stopRecording: return try await endRecording(device) { try await tools.stopRecording(device) }
         case .appearance(let dark): try await tools.setAppearance(device, dark: dark); return dark ? "Dark mode on" : "Light mode on"
+        case .toggleAppearance: return try await tools.toggleAppearance(device) ? "Dark mode on" : "Light mode on"
+        case .textSize(let larger): try await tools.changeTextSize(device, larger: larger); return larger ? "Larger text" : "Smaller text"
         case .openURL(let url): try await tools.openURL(device, url); return "Opened URL"
         case .install(let source): try await tools.install(device, source: source); return "Installed app"
         case .location(let latitude, let longitude): try await tools.setLocation(device, latitude: latitude, longitude: longitude); return "Location set"
         case .rotate: try await tools.rotate(device); return nil
+        case .rotateLeft: try await tools.rotate(device, steps: 3); return nil
         case .animations(let enabled): try await tools.setAnimations(device, enabled: enabled); return enabled ? "Animations on" : "Animations off"
         case .showTaps(let enabled): try await tools.setShowTaps(device, enabled: enabled); return enabled ? "Showing taps" : "Taps hidden"
         case .reboot: try await tools.reboot(device); return "Rebooting"

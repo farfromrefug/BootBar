@@ -18,6 +18,10 @@ public enum DeviceTool: Sendable, Equatable {
     case startRecording
     case stopRecording
     case appearance(dark: Bool)
+    /// Switches to the other of dark and light, whichever the device is in.
+    case toggleAppearance
+    /// One step up or down in the system text size.
+    case textSize(larger: Bool)
     case openURL(String)
     /// A local `.app` / `.apk` / `.tar.gz` / `.zip`, or an http(s) URL to one.
     case install(String)
@@ -25,6 +29,7 @@ public enum DeviceTool: Sendable, Equatable {
     case clearLocation
     case statusBar(clean: Bool)
     case rotate
+    case rotateLeft
     case animations(enabled: Bool)
     case showTaps(enabled: Bool)
     case reboot
@@ -54,7 +59,7 @@ public enum DeviceTool: Sendable, Equatable {
         case (.ios, .screenshot), (.ios, .startRecording), (.ios, .stopRecording), (.ios, .install),
              (.ios, .launch), (.ios, .uninstall): return true
         case (.ios, _): return false
-        case (.android, .location), (.android, .rotate), (.android, .revealStorage),
+        case (.android, .location), (.android, .rotate), (.android, .rotateLeft), (.android, .revealStorage),
              (.android, .startRecording), (.android, .stopRecording): return false
         case (.android, _): return isSupported(on: .android)
         }
@@ -63,7 +68,7 @@ public enum DeviceTool: Sendable, Equatable {
     public func isSupported(on platform: Platform) -> Bool {
         switch self {
         case .clearLocation, .statusBar, .revealAppData, .addMedia, .copyToFiles, .relaunch: platform == .ios
-        case .rotate, .animations, .showTaps, .reboot, .clearData, .scrcpy, .pushFile: platform == .android
+        case .rotate, .rotateLeft, .animations, .showTaps, .reboot, .clearData, .scrcpy, .pushFile: platform == .android
         default: true
         }
     }
@@ -242,6 +247,18 @@ public struct SimulatorTools: Sendable {
         try await simctl(["ui", device.id, "appearance", dark ? "dark" : "light"])
     }
 
+    /// Returns whether the simulator is dark afterwards.
+    public func toggleAppearance(_ device: Device) async throws -> Bool {
+        let current = try await simctl(["ui", device.id, "appearance"]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let dark = current != "dark"
+        try await setAppearance(device, dark: dark)
+        return dark
+    }
+
+    public func changeTextSize(_ device: Device, larger: Bool) async throws {
+        try await simctl(["ui", device.id, "content_size", larger ? "increment" : "decrement"])
+    }
+
     /// One JPEG frame of the screen, for the polling mirror.
     public func captureFrame(_ device: Device) async throws -> Data {
         let path = "\(temporaryDirectory)/bootbar-frame-\(device.id).jpg"
@@ -402,6 +419,25 @@ public struct EmulatorTools: Sendable {
         try await adb(device, ["shell", "cmd", "uimode", "night", dark ? "yes" : "no"])
     }
 
+    /// Returns whether the device is dark afterwards.
+    public func toggleAppearance(_ device: Device) async throws -> Bool {
+        let current = try await adb(device, ["shell", "cmd", "uimode", "night"])
+        let dark = !current.lowercased().contains("yes")
+        try await setAppearance(device, dark: dark)
+        return dark
+    }
+
+    static let fontScales: [Double] = [0.85, 1.0, 1.15, 1.3]
+
+    /// Steps `font_scale` through the sizes Android's own setting offers.
+    public func changeTextSize(_ device: Device, larger: Bool) async throws {
+        let current = Double(try await adb(device, ["shell", "settings", "get", "system", "font_scale"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1.0
+        let index = Self.fontScales.enumerated().min { abs($0.element - current) < abs($1.element - current) }?.offset ?? 1
+        let next = Self.fontScales[min(max(index + (larger ? 1 : -1), 0), Self.fontScales.count - 1)]
+        try await adb(device, ["shell", "settings", "put", "system", "font_scale", String(next)])
+    }
+
     public func openURL(_ device: Device, _ url: String) async throws {
         try await adb(device, ["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", RemoteShell.quote(url)])
     }
@@ -482,8 +518,8 @@ public struct EmulatorTools: Sendable {
         try await adb(device, ["emu", "geo", "fix", "\(longitude)", "\(latitude)"])
     }
 
-    public func rotate(_ device: Device) async throws {
-        try await adb(device, ["emu", "rotate"])
+    public func rotate(_ device: Device, steps: Int = 1) async throws {
+        for _ in 0..<steps { try await adb(device, ["emu", "rotate"]) }
     }
 
     public func setAnimations(_ device: Device, enabled: Bool) async throws {

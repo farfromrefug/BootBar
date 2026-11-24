@@ -55,6 +55,7 @@ struct BootBarApp: App {
         }
         .defaultSize(width: 1180, height: 720)
         .defaultLaunchBehavior(.suppressed)
+        .commands { DeviceCommands() }
 
         Settings {
             SettingsView()

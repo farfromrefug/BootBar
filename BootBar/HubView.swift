@@ -85,6 +85,8 @@ struct HubView: View {
                 try? await Task.sleep(for: .seconds(5))
             }
         }
+        .focusedSceneValue(\.hubActions, HubActions(device: selected, isRecording: selected.map { tools.isRecording($0) } ?? false,
+                                                   perform: { perform($0) }))
         .onChange(of: router.selection) { _, _ in creating = nil }
         .onChange(of: list.iosDevices + list.androidDevices + list.physicalDevices) { _, devices in
             Task { await network.deviceListChanged(devices) }
@@ -290,6 +292,36 @@ struct HubView: View {
 
     private var kindBinding: Binding<PanelKind> {
         Binding(get: { panelKind }, set: { panelKindRaw = $0.rawValue })
+    }
+
+    /// The Device and Panels menus. Keys go to the mirror's input rather than to the simulator or emulator window.
+    private func perform(_ command: HubCommand) {
+        guard let device = selected else { return }
+        let ios = device.platform == .ios
+        func run(_ tool: DeviceTool) { Task { await tools.perform(tool, on: device) } }
+        func panel(_ kind: PanelKind) { togglePanel(kind, on: !(logMode != .hidden && showInspector && panelKind == kind)) }
+        switch command {
+        case .home: if ios { mirror.press(SimulatorInputSession.Button.home) } else { mirror.press(AndroidInput.Key.home) }
+        case .appSwitcher: if ios { mirror.press(SimulatorInputSession.Button.appSwitcher) } else { mirror.press(AndroidInput.Key.appSwitch) }
+        case .back: mirror.press(AndroidInput.Key.back)
+        case .lock: if ios { mirror.press(SimulatorInputSession.Button.lock) } else { mirror.press(AndroidInput.Key.power) }
+        case .volumeUp: if ios { mirror.press(SimulatorInputSession.Button.volumeUp) } else { mirror.press(AndroidInput.Key.volumeUp) }
+        case .volumeDown: if ios { mirror.press(SimulatorInputSession.Button.volumeDown) } else { mirror.press(AndroidInput.Key.volumeDown) }
+        case .screenshot: run(.screenshot)
+        case .toggleRecording: run(tools.isRecording(device) ? .stopRecording : .startRecording)
+        case .rotateLeft: run(.rotateLeft)
+        case .rotateRight: run(.rotate)
+        case .toggleDarkMode: run(.toggleAppearance)
+        case .largerText: run(.textSize(larger: true))
+        case .smallerText: run(.textSize(larger: false))
+        case .start: Task { await list.perform(.start, on: device) }
+        case .startHeadless: Task { await list.perform(.startHeadless, on: device) }
+        case .stop: Task { await list.perform(.stop, on: device) }
+        case .showMirror: showMirror.toggle()
+        case .showLogs: panel(.logs)
+        case .showNetwork: panel(.network)
+        case .showTools: showInspector.toggle()
+        }
     }
 
     private func togglePanel(_ kind: PanelKind, on: Bool) {

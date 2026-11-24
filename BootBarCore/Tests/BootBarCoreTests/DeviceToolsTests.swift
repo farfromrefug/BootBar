@@ -331,3 +331,39 @@ private func bundleTools(_ runner: MockShellRunner, bundletool: String? = "/bt/b
     #expect(DeviceTool.relaunch(app: "x").isSupported(for: sim))
     #expect(!DeviceTool.relaunch(app: "x").isSupported(for: avd))
 }
+
+@Test func simulatorTogglesAppearanceToTheOtherMode() async throws {
+    let runner = MockShellRunner()
+    runner.responses["/usr/bin/xcrun simctl ui UDID-1 appearance"] = .success("light\n")
+    let dark = try await simulatorTools(runner).toggleAppearance(sim)
+    #expect(dark)
+    #expect(runner.commands.last == "/usr/bin/xcrun simctl ui UDID-1 appearance dark")
+    runner.responses["/usr/bin/xcrun simctl ui UDID-1 appearance"] = .success("dark\n")
+    #expect(try await simulatorTools(runner).toggleAppearance(sim) == false)
+    #expect(runner.commands.last == "/usr/bin/xcrun simctl ui UDID-1 appearance light")
+}
+
+@Test func emulatorTogglesAppearanceAndStepsTextSize() async throws {
+    let runner = MockShellRunner()
+    runner.responses["\(adb) shell cmd uimode night"] = .success("Night mode: no\n")
+    #expect(try await emulatorTools(runner).toggleAppearance(avd))
+    #expect(runner.commands.last == "\(adb) shell cmd uimode night yes")
+
+    runner.responses["\(adb) shell settings get system font_scale"] = .success("1.0\n")
+    try await emulatorTools(runner).changeTextSize(avd, larger: true)
+    #expect(runner.commands.last == "\(adb) shell settings put system font_scale 1.15")
+    runner.responses["\(adb) shell settings get system font_scale"] = .success("null\n")
+    try await emulatorTools(runner).changeTextSize(avd, larger: false)
+    #expect(runner.commands.last == "\(adb) shell settings put system font_scale 0.85")
+    runner.responses["\(adb) shell settings get system font_scale"] = .success("1.3\n")
+    try await emulatorTools(runner).changeTextSize(avd, larger: true)
+    #expect(runner.commands.last == "\(adb) shell settings put system font_scale 1.3")
+}
+
+@Test func simulatorStepsTextSizeAndEmulatorRotatesLeftByThreeSteps() async throws {
+    let runner = MockShellRunner()
+    try await simulatorTools(runner).changeTextSize(sim, larger: false)
+    #expect(runner.commands.last == "/usr/bin/xcrun simctl ui UDID-1 content_size decrement")
+    try await emulatorTools(runner).rotate(avd, steps: 3)
+    #expect(runner.commands.suffix(3) == Array(repeating: "\(adb) emu rotate", count: 3))
+}
