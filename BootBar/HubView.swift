@@ -87,7 +87,10 @@ struct HubView: View {
         .focusedSceneValue(\.hubActions, HubActions(device: selected, isRecording: selected.map { tools.isRecording($0) } ?? false,
                                                    perform: { perform($0) }))
         .onChange(of: router.selection) { _, _ in creating = nil }
-        .onAppear { tools.didRotate = { mirror.rotated($0, clockwise: $1) } }
+        .onAppear {
+            tools.didRotate = { mirror.rotated($0, clockwise: $1) }
+            mirror.orientationProvider = { tools.orientation(of: $0) }
+        }
         .onChange(of: list.iosDevices + list.androidDevices + list.physicalDevices) { _, devices in
             Task { await network.deviceListChanged(devices) }
         }

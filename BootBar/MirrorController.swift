@@ -23,13 +23,50 @@ final class MirrorController {
 
     private(set) var state: State = .idle
     private(set) var content: Content = .none
-    /// Pixel size of the picture currently shown, for mapping clicks to device coordinates.
+    /// Pixel size of the picture the device sends (a simulator's native, portrait one), for sending touches.
     private(set) var frameSize: CGSize?
-    /// Bumped each time the picture turns, with the direction it turned.
-    struct Rotation: Equatable { var id: Int; var clockwise: Bool }
-    private(set) var rotation: Rotation?
-    private var pendingRotation: Bool?
-    private var wasLandscape: Bool?
+    /// How a simulator is held. Its stream is always the native portrait picture, which Simulator.app turns when it
+    /// draws it: so does the mirror.
+    private(set) var simOrientation = SimulatorOrientation.portrait
+    /// Where the view finds how the simulator is held, and how it shows a turn.
+    var orientationProvider: ((Device) -> SimulatorOrientation)?
+    var rotationAnimator: ((_ clockwise: Bool, _ contentRotation: CGFloat?) -> Void)?
+    private let frameState = FrameState()
+
+    /// The picture as shown, which is `frameSize` turned on its side for a simulator held in landscape.
+    var displaySize: CGSize? {
+        guard let size = frameSize else { return nil }
+        return simOrientation == .portrait || device?.platform != .ios ? size : CGSize(width: size.height, height: size.width)
+    }
+
+    /// How much the picture is turned to be upright, counterclockwise in radians.
+    var contentRotation: CGFloat {
+        switch simOrientation {
+        case .portrait: 0
+        case .landscapeRight: .pi / 2
+        case .landscapeLeft: -.pi / 2
+        }
+    }
+
+    /// Which way the screen turned, and whether a new frame already shows it: see `present`.
+    private final class FrameState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var landscape: Bool?
+        private var pending: Bool?
+
+        func expect(clockwise: Bool) { lock.withLock { pending = clockwise } }
+        func reset() { lock.withLock { landscape = nil; pending = nil } }
+
+        /// The direction of the turn when this frame is the first one in the other orientation.
+        func flip(to isLandscape: Bool) -> Bool? {
+            lock.withLock {
+                defer { landscape = isLandscape }
+                guard let was = landscape, was != isLandscape else { return nil }
+                defer { pending = nil }
+                return pending ?? true
+            }
+        }
+    }
     private(set) var device: Device?
 
     nonisolated let displayLayer = AVSampleBufferDisplayLayer()
@@ -58,8 +95,9 @@ final class MirrorController {
 
     func start(_ device: Device) {
         stop()
-        if self.device?.id != device.id { wasLandscape = nil }
+        if self.device?.id != device.id { frameState.reset() }
         self.device = device
+        simOrientation = device.platform == .ios && !device.isPhysical ? orientationProvider?(device) ?? .portrait : .portrait
         state = .starting
         switch (device.platform, device.isPhysical) {
         case (.android, _): startAndroid(device)
@@ -68,11 +106,17 @@ final class MirrorController {
         }
     }
 
-    /// A rotation was asked for. The adb stream (`screenrecord`) keeps recording at the size it started with, and
-    /// Baguette's stream does not announce the new size, so both need a new stream; scrcpy announces it itself.
+    /// A rotation was asked for. The adb stream (`screenrecord`) keeps recording at the size it started with, so it
+    /// needs a new stream; scrcpy announces the new size itself, and a simulator's stream never changes size.
     func rotated(_ rotated: Device, clockwise: Bool) {
-        pendingRotation = clockwise
-        guard engine == "adb" || (rotated.platform == .ios && !rotated.isPhysical), device?.id == rotated.id else { return }
+        guard device?.id == rotated.id else { return }
+        if rotated.platform == .ios, !rotated.isPhysical {
+            simOrientation = orientationProvider?(rotated) ?? .portrait
+            rotationAnimator?(clockwise, contentRotation)
+            return
+        }
+        frameState.expect(clockwise: clockwise)
+        guard engine == "adb" else { return }
         let token = generation
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(700))
@@ -80,6 +124,22 @@ final class MirrorController {
             self.stop()
             self.start(rotated)
         }
+    }
+
+    /// Shows a frame. The first one in the other orientation is shown in the same turn of the main thread as the
+    /// start of the turning animation, or the new picture would show for a moment before it starts to turn.
+    nonisolated private func present(_ frame: VideoFrame) {
+        let layer = displayLayer
+        if layer.status == .failed { layer.flush() }
+        if let clockwise = frameState.flip(to: frame.width > frame.height), !Thread.isMainThread {
+            DispatchQueue.main.sync {
+                MainActor.assumeIsolated { self.rotationAnimator?(clockwise, nil) }
+                layer.enqueue(frame.sampleBuffer)
+            }
+        } else {
+            layer.enqueue(frame.sampleBuffer)
+        }
+        Task { @MainActor [weak self] in self?.didReceive(width: frame.width, height: frame.height) }
     }
 
     func stop() {
@@ -143,9 +203,7 @@ final class MirrorController {
         let syncs = Preferences.syncClipboard
         if syncs { clipboard.startAndroid(session) }
         session.start(onFrame: { [weak self] frame in
-            if layer.status == .failed { layer.flush() }
-            layer.enqueue(frame.sampleBuffer)
-            Task { @MainActor in self?.didReceive(width: frame.width, height: frame.height) }
+            self?.present(frame)
         }, onEnd: { [weak self] message in
             Task { @MainActor in
                 guard let self, self.scrcpy === session, self.generation == token else { return }
@@ -172,9 +230,7 @@ final class MirrorController {
         engine = "adb"
         let layer = displayLayer
         session.start(onFrame: { [weak self] frame in
-            if layer.status == .failed { layer.flush() }
-            layer.enqueue(frame.sampleBuffer)
-            Task { @MainActor in self?.didReceive(width: frame.width, height: frame.height) }
+            self?.present(frame)
         }, onEnd: { [weak self] message in
             Task { @MainActor in
                 guard let self, self.android === session else { return }
@@ -191,13 +247,6 @@ final class MirrorController {
         if state != .live { state = .live }
         let size = CGSize(width: width, height: height)
         if frameSize != size { frameSize = size }
-        // the picture turned from portrait to landscape or back: the view animates it
-        let landscape = width > height
-        if let was = wasLandscape, was != landscape {
-            rotation = Rotation(id: (rotation?.id ?? 0) + 1, clockwise: pendingRotation ?? true)
-            pendingRotation = nil
-        }
-        wasLandscape = landscape
     }
 
     // MARK: Simulator
@@ -221,9 +270,7 @@ final class MirrorController {
         let layer = displayLayer
         let token = generation
         session.start(onFrame: { [weak self] frame in
-            if layer.status == .failed { layer.flush() }
-            layer.enqueue(frame.sampleBuffer)
-            Task { @MainActor in self?.didReceive(width: frame.width, height: frame.height) }
+            self?.present(frame)
         }, onEnd: { [weak self] message in
             Task { @MainActor in
                 guard let self, self.simStream === session, self.generation == token else { return }
@@ -445,7 +492,13 @@ final class MirrorController {
             case .move: .move
             case .up: .up
             }
-            simInput.touch(mapped, x: point.x * size.width, y: point.y * size.height, width: size.width, height: size.height)
+            // the point is in the picture as shown; the simulator wants it in its own, portrait one
+            let native: CGPoint = switch simOrientation {
+            case .portrait: point
+            case .landscapeRight: CGPoint(x: 1 - point.y, y: point.x)
+            case .landscapeLeft: CGPoint(x: point.y, y: 1 - point.x)
+            }
+            simInput.touch(mapped, x: native.x * size.width, y: native.y * size.height, width: size.width, height: size.height)
             return
         }
         if let scrcpy {

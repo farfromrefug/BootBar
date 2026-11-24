@@ -7,20 +7,18 @@ struct MirrorView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> MirrorHostView {
         let view = MirrorHostView(displayLayer: controller.displayLayer)
+        controller.rotationAnimator = { [weak view] clockwise, rotation in view?.animateRotation(clockwise: clockwise, contentRotation: rotation) }
         view.onPointer = { phase, point in controller.pointer(phase, at: point) }
         view.onKey = { event in controller.handleKey(event) }
         return view
     }
 
     func updateNSView(_ view: MirrorHostView, context: Context) {
-        view.frameSize = controller.frameSize
+        view.contentRotation = controller.contentRotation
+        view.frameSize = controller.displaySize
         view.acceptsInput = controller.supportsInput
         if controller.state == .live, controller.supportsInput { view.takeFocusIfUnclaimed() }
         view.show(controller.content)
-        if let rotation = controller.rotation, rotation.id != view.animatedRotation {
-            view.animatedRotation = rotation.id
-            view.animateRotation(clockwise: rotation.clockwise)
-        }
     }
 }
 
@@ -29,7 +27,8 @@ final class MirrorHostView: NSView {
     var onKey: ((NSEvent) -> Bool)?
     var frameSize: CGSize? { didSet { needsLayout = true } }
     var acceptsInput = false
-    var animatedRotation = 0
+    /// How much the video is turned to be upright (a simulator held in landscape), counterclockwise in radians.
+    var contentRotation: CGFloat = 0 { didSet { if contentRotation != oldValue { needsLayout = true } } }
 
     private let displayLayer: AVSampleBufferDisplayLayer
     private let imageLayer = CALayer()
@@ -76,14 +75,19 @@ final class MirrorHostView: NSView {
         needsLayout = true
     }
 
-    /// The new picture turns into place, the way the screen of a phone does, instead of jumping.
-    func animateRotation(clockwise: Bool) {
+    /// The new picture turns into place, the way the screen of a phone does, instead of jumping. `contentRotation` is
+    /// the new turn of a simulator's picture, applied here so that it and the animation start together.
+    func animateRotation(clockwise: Bool, contentRotation newRotation: CGFloat?) {
+        if let newRotation {
+            contentRotation = newRotation
+            layoutSubtreeIfNeeded()
+        }
         let shrink = min(bounds.width / max(bounds.height, 1), bounds.height / max(bounds.width, 1))
-        let start = CATransform3DConcat(CATransform3DMakeScale(shrink, shrink, 1),
+        let extra = CATransform3DConcat(CATransform3DMakeScale(shrink, shrink, 1),
                                         CATransform3DMakeRotation(clockwise ? .pi / 2 : -.pi / 2, 0, 0, 1))
         let turn = CABasicAnimation(keyPath: "transform")
-        turn.fromValue = start
-        turn.toValue = CATransform3DIdentity
+        turn.fromValue = CATransform3DConcat(displayLayer.transform, extra)
+        turn.toValue = displayLayer.transform
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 0.0
         fade.toValue = 1.0
@@ -98,7 +102,16 @@ final class MirrorHostView: NSView {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        displayLayer.frame = bounds
+        // a simulator's stream is its native portrait picture: lay the layer out on its side and turn it upright
+        if contentRotation == 0 {
+            displayLayer.transform = CATransform3DIdentity
+            displayLayer.frame = bounds
+        } else {
+            displayLayer.transform = CATransform3DIdentity
+            displayLayer.bounds = CGRect(x: 0, y: 0, width: bounds.height, height: bounds.width)
+            displayLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+            displayLayer.transform = CATransform3DMakeRotation(contentRotation, 0, 0, 1)
+        }
         imageLayer.frame = bounds
         previewLayer?.frame = bounds
         CATransaction.commit()

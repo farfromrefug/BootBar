@@ -23,6 +23,9 @@ public final class DeviceToolsViewModel {
     /// Called after a device was rotated, so a mirror that does not follow the rotation by itself can restart.
     public var didRotate: ((Device, _ clockwise: Bool) -> Void)?
     private var orientations: [String: SimulatorOrientation] = [:]
+
+    /// How a simulator is held, as far as BootBar knows: it cannot be asked.
+    public func orientation(of device: Device) -> SimulatorOrientation { orientations[device.id] ?? .portrait }
     public private(set) var recordings: [String: String] = [:]
 
     private let runner: any ShellRunner
