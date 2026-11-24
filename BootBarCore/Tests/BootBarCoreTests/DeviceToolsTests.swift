@@ -385,12 +385,9 @@ private func bundleTools(_ runner: MockShellRunner, bundletool: String? = "/bt/b
     try await emulatorTools(runner).rotate(avd, clockwise: false)
     #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 1")
 
-    runner.responses[window] = .success("mCurrentOrientation=1\n")   // turned back to portrait: released
+    runner.responses[window] = .success("mCurrentOrientation=1\n")   // back to portrait stays locked
     try await emulatorTools(runner).rotate(avd)
-    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation free")
-    runner.responses[window] = .success("mCurrentOrientation=3\n")
-    try await emulatorTools(runner).rotate(avd, clockwise: false)
-    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation free")
+    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 0")
 }
 
 @Test func androidRotationFallsBackToSettingsOnOldVersions() async throws {
@@ -402,13 +399,18 @@ private func bundleTools(_ runner: MockShellRunner, bundletool: String? = "/bt/b
                                           "\(adb) shell settings put system user_rotation 3"])
 }
 
-@Test func androidRotationSkipsUpsideDown() async throws {
+@Test func androidRotationFromLandscapeGoesBackToPortraitNotUpsideDown() async throws {
     let orientation = "\(adb) shell dumpsys display | grep -m1 -o 'mCurrentOrientation=[0-9]'"
     let runner = MockShellRunner()
     runner.responses[orientation] = .success("mCurrentOrientation=3\n")
-    try await emulatorTools(runner).rotate(avd)                       // clockwise from 3 would be 2
-    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 1")
+    try await emulatorTools(runner).rotate(avd)                       // clockwise from 3 would be upside down
+    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 0")
     runner.responses[orientation] = .success("mCurrentOrientation=1\n")
-    try await emulatorTools(runner).rotate(avd, clockwise: false)     // counterclockwise from 1 would be 2
-    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 3")
+    try await emulatorTools(runner).rotate(avd, clockwise: false)     // counterclockwise from 1 would be too
+    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 0")
+    try await emulatorTools(runner).rotate(avd)                       // clockwise from 1 is portrait
+    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 0")
+    runner.responses[orientation] = .success("mCurrentOrientation=0\n")
+    try await emulatorTools(runner).rotate(avd, clockwise: false)
+    #expect(runner.commands.last == "\(adb) shell cmd window user-rotation lock 1")
 }

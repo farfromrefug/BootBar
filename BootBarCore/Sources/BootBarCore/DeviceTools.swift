@@ -520,17 +520,17 @@ public struct EmulatorTools: Sendable {
 
     /// Turns the screen a quarter turn through the window manager, which every app obeys. (The emulator's own
     /// `rotate` only moves its virtual sensor: nothing happens on a home screen that does not follow it, or when
-    /// auto-rotate is off, and it does not exist on a phone.) Back in portrait the rotation is released again.
+    /// auto-rotate is off, and it does not exist on a phone.) The rotation stays locked: releasing it in portrait
+    /// would hand the screen back to the sensor, and an emulator whose sensor was turned springs back to landscape.
     public func rotate(_ device: Device, clockwise: Bool = true) async throws {
         var next = (try await currentRotation(device) + (clockwise ? 3 : 1)) % 4
-        // a phone does not turn upside down (only a tablet does): skip that step
-        if next == 2 { next = clockwise ? 1 : 3 }
+        // a phone does not turn upside down (only a tablet does): from a landscape the next turn is back to portrait
+        if next == 2 { next = 0 }
         do {
-            try await adb(device, ["shell", "cmd", "window", "user-rotation", next == 0 ? "free" : "lock", next == 0 ? "" : String(next)]
-                .filter { !$0.isEmpty })
+            try await adb(device, ["shell", "cmd", "window", "user-rotation", "lock", String(next)])
         } catch {
             // Android 10 and earlier have no such command
-            try await adb(device, ["shell", "settings", "put", "system", "accelerometer_rotation", next == 0 ? "1" : "0"])
+            try await adb(device, ["shell", "settings", "put", "system", "accelerometer_rotation", "0"])
             try await adb(device, ["shell", "settings", "put", "system", "user_rotation", String(next)])
         }
     }
