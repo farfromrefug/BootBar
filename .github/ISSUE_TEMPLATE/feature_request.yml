@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an idea for BootBar
+description: Suggest an idea for Deckhand
 labels: ["enhancement", "triage"]
 body:
   - type: textarea

@@ -17,9 +17,9 @@ jobs:
       - name: Swift version
         run: swift --version
       - name: Package tests
-        run: swift test --package-path BootBarCore
+        run: swift test --package-path DeckhandCore
       - name: Build app
-        run: xcodebuild -project BootBar.xcodeproj -scheme BootBar -destination 'platform=macOS,arch=arm64' build
+        run: xcodebuild -project Deckhand.xcodeproj -scheme Deckhand -destination 'platform=macOS,arch=arm64' build
 
   helper:
     runs-on: ubuntu-latest

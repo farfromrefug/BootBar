@@ -1,6 +1,6 @@
 name: Release
 
-# Builds, signs and notarizes BootBar.
+# Builds, signs and notarizes Deckhand.
 #
 #   * push of a `v*` tag             -> build, notarize, publish a GitHub release for that tag
 #   * manual run, `release` ticked   -> bump the version, build, notarize, push the bump commit and
@@ -43,9 +43,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PROJECT: BootBar.xcodeproj
-  SCHEME: BootBar
-  APP_NAME: BootBar
+  PROJECT: Deckhand.xcodeproj
+  SCHEME: Deckhand
+  APP_NAME: Deckhand
 
 jobs:
   test:
@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Package tests
-        run: swift test --package-path BootBarCore
+        run: swift test --package-path DeckhandCore
 
   build:
     needs: test
@@ -77,8 +77,8 @@ jobs:
           fetch-depth: 0
 
       # The helper app (a small VPN that points Android devices at the proxy) is bundled in the app as
-      # BootBar/DeckhandHelper.apk. It is signed with a debug key: it is only ever installed over adb,
-      # and BootBar reinstalls it when the key differs, so no secret is needed.
+      # Deckhand/DeckhandHelper.apk. It is signed with a debug key: it is only ever installed over adb,
+      # and Deckhand reinstalls it when the key differs, so no secret is needed.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -92,7 +92,7 @@ jobs:
           yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$sdk/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" > /dev/null
           DeckhandHelper/build.sh
-          test -s BootBar/DeckhandHelper.apk
+          test -s Deckhand/DeckhandHelper.apk
 
       - name: Check signing secrets
         id: signing
@@ -246,8 +246,8 @@ jobs:
           name="$APP_NAME-$VERSION"
 
           ditto -c -k --keepParent "$APP_PATH" "dist/$name.zip"
-          # the helper on its own, for devices that BootBar does not reach over adb
-          cp BootBar/DeckhandHelper.apk "dist/DeckhandHelper-$VERSION.apk"
+          # the helper on its own, for devices that Deckhand does not reach over adb
+          cp Deckhand/DeckhandHelper.apk "dist/DeckhandHelper-$VERSION.apk"
 
           staging="$RUNNER_TEMP/dmg"
           rm -rf "$staging"

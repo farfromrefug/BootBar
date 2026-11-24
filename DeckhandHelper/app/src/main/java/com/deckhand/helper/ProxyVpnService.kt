@@ -6,7 +6,7 @@ import android.net.VpnService
 import android.os.ParcelFileDescriptor
 
 /**
- * A VPN that carries no traffic of its own. It exists to give the device a network whose HTTP proxy is BootBar,
+ * A VPN that carries no traffic of its own. It exists to give the device a network whose HTTP proxy is Deckhand,
  * which every app that respects the system proxy then uses, without a setting that adb has to change.
  */
 class ProxyVpnService : VpnService() {
@@ -27,7 +27,7 @@ class ProxyVpnService : VpnService() {
         tunnel?.close()
         tunnel = try {
             Builder()
-                .setSession("BootBar")
+                .setSession("Deckhand")
                 // nothing is routed here but this documentation address, so the real network keeps working as it is
                 .addAddress("10.255.255.1", 32)
                 .addRoute("192.0.2.1", 32)

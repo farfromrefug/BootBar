@@ -11,7 +11,7 @@ import android.net.VpnService
 import android.os.IBinder
 
 /**
- * Follows BootBar: while its proxy answers (BootBar is capturing and `adb reverse` is in place) the VPN is up,
+ * Follows Deckhand: while its proxy answers (Deckhand is capturing and `adb reverse` is in place) the VPN is up,
  * and when it stops answering the VPN is taken down again, so nothing is left pointing at a proxy that is gone.
  */
 class WatchService : Service() {
@@ -30,7 +30,7 @@ class WatchService : Service() {
             Bridge.watching = true
             if (Bridge.phase == Phase.OFF) Bridge.update(Phase.WAITING)
             Bridge.listen(phaseListener)
-            thread = Thread(::watch, "bootbar-watch").also { it.isDaemon = true; it.start() }
+            thread = Thread(::watch, "deckhand-watch").also { it.isDaemon = true; it.start() }
         }
         return START_STICKY
     }
@@ -51,7 +51,7 @@ class WatchService : Service() {
                     }
                 }
             } else if (++misses >= 2) {
-                // two missed answers in a row: BootBar stopped capturing (one miss can be a busy proxy)
+                // two missed answers in a row: Deckhand stopped capturing (one miss can be a busy proxy)
                 if (Bridge.vpnEndpoint != null) {
                     startService(Intent(this, ProxyVpnService::class.java).putExtra("stop", true))
                 } else {
@@ -89,17 +89,17 @@ class WatchService : Service() {
     private fun notification(phase: Phase): Notification {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "BootBar", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) })
+            NotificationChannel(CHANNEL, "Deckhand", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) })
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val text = when (phase) {
-            Phase.CONNECTED -> "Connected: requests go to BootBar"
+            Phase.CONNECTED -> "Connected: requests go to Deckhand"
             Phase.CONNECTING -> "Connecting…"
             Phase.NEEDS_PERMISSION -> "Tap to allow the VPN"
-            else -> "Waiting for BootBar to capture"
+            else -> "Waiting for Deckhand to capture"
         }
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("BootBar")
+            .setContentTitle("Deckhand")
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)

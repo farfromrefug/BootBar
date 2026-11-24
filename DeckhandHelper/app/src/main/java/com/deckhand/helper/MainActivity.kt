@@ -21,7 +21,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * The screen, and the way BootBar drives the helper over adb:
+ * The screen, and the way Deckhand drives the helper over adb:
  * `am start -n com.deckhand.helper/.MainActivity --es command watch --es host 127.0.0.1 --ei port 8899 --ez quiet true`
  * (`unwatch` turns it off; `start` and `stop` bring the VPN up or down once, without watching).
  */
@@ -84,7 +84,7 @@ class MainActivity : Activity() {
             addView(host, margin(top = 10))
             addView(port, margin(top = 10))
             addView(TextView(context).apply {
-                text = "BootBar sets this up itself. Change it only to use another proxy."
+                text = "Deckhand sets this up itself. Change it only to use another proxy."
                 textSize = 12f; setTextColor(secondary)
             }, margin(top = 10))
         }
@@ -217,10 +217,10 @@ class MainActivity : Activity() {
         val settings = Settings(this)
         status.phase = phase
         val (heading, detail, button) = when (phase) {
-            Phase.OFF -> Triple("Off", "Turn it on and this device connects by itself whenever BootBar is capturing.", "Turn on")
-            Phase.WAITING -> Triple("Waiting for BootBar", "Start capturing in BootBar. The VPN connects as soon as it does, and disconnects when it stops.", "Turn off")
-            Phase.CONNECTING -> Triple("Connecting…", "Setting up the VPN to BootBar.", "Turn off")
-            Phase.CONNECTED -> Triple("Connected", "Requests from this device go to BootBar at ${settings.host}:${settings.port}.", "Turn off")
+            Phase.OFF -> Triple("Off", "Turn it on and this device connects by itself whenever Deckhand is capturing.", "Turn on")
+            Phase.WAITING -> Triple("Waiting for Deckhand", "Start capturing in Deckhand. The VPN connects as soon as it does, and disconnects when it stops.", "Turn off")
+            Phase.CONNECTING -> Triple("Connecting…", "Setting up the VPN to Deckhand.", "Turn off")
+            Phase.CONNECTED -> Triple("Connected", "Requests from this device go to Deckhand at ${settings.host}:${settings.port}.", "Turn off")
             Phase.NEEDS_PERMISSION -> Triple("Allow the VPN", "Android needs your approval once before this app can set up its VPN.", "Allow")
         }
         title.text = heading
@@ -233,11 +233,11 @@ class MainActivity : Activity() {
     /** Says whether HTTPS can be read: apps that ignore the user certificate store only work with a system certificate. */
     private fun renderTrust() {
         val (color, text) = when (Trust.read()) {
-            Trust.SYSTEM -> 0xFF22C55E.toInt() to "HTTPS is decrypted for every app: BootBar's certificate is in the system store."
-            Trust.USER -> 0xFFF59E0B.toInt() to "System trust disabled. BootBar's certificate is only in the user store, so HTTPS is decrypted only for apps that trust user certificates (browsers, debug builds). Most apps will fail." +
-                if (Build.TYPE == "user") " This device cannot be rooted: use a Google APIs or AOSP emulator image." else " Press Set Up in BootBar to trust it system-wide."
-            Trust.MISSING_ROOTABLE -> 0xFFF59E0B.toInt() to "BootBar's certificate is not trusted yet. Press Set Up in BootBar and it installs it for every app."
-            Trust.MISSING_LOCKED -> 0xFFEF4444.toInt() to "BootBar's certificate is not trusted, and this device cannot be rooted (a Google Play image or production build). Install it from Settings; only apps that trust user certificates will be decrypted. A Google APIs or AOSP emulator image decrypts every app."
+            Trust.SYSTEM -> 0xFF22C55E.toInt() to "HTTPS is decrypted for every app: Deckhand's certificate is in the system store."
+            Trust.USER -> 0xFFF59E0B.toInt() to "System trust disabled. Deckhand's certificate is only in the user store, so HTTPS is decrypted only for apps that trust user certificates (browsers, debug builds). Most apps will fail." +
+                if (Build.TYPE == "user") " This device cannot be rooted: use a Google APIs or AOSP emulator image." else " Press Set Up in Deckhand to trust it system-wide."
+            Trust.MISSING_ROOTABLE -> 0xFFF59E0B.toInt() to "Deckhand's certificate is not trusted yet. Press Set Up in Deckhand and it installs it for every app."
+            Trust.MISSING_LOCKED -> 0xFFEF4444.toInt() to "Deckhand's certificate is not trusted, and this device cannot be rooted (a Google Play image or production build). Install it from Settings; only apps that trust user certificates will be decrypted. A Google APIs or AOSP emulator image decrypts every app."
         }
         trust.text = text
         trust.setTextColor(primary)

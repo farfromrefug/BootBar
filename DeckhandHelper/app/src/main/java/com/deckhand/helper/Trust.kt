@@ -4,7 +4,7 @@ import android.os.Build
 import java.security.KeyStore
 import java.security.cert.X509Certificate
 
-/** Whether apps on this device will accept the certificate BootBar signs HTTPS with. */
+/** Whether apps on this device will accept the certificate Deckhand signs HTTPS with. */
 enum class Trust {
     /** In the system store: every app trusts it. */
     SYSTEM,
@@ -12,7 +12,7 @@ enum class Trust {
     /** Only in the user store: browsers and debug builds trust it, most other apps do not. */
     USER,
 
-    /** In neither, on a device that BootBar can make trust it (adb can become root). */
+    /** In neither, on a device that Deckhand can make trust it (adb can become root). */
     MISSING_ROOTABLE,
 
     /** In neither, on a device that cannot be rooted. */

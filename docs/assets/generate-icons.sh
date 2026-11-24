@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 SVG="icon.svg"
-OUT="../../BootBar/Assets.xcassets/AppIcon.appiconset"
+OUT="../../Deckhand/Assets.xcassets/AppIcon.appiconset"
 
 render() { rsvg-convert -w "$1" -h "$1" "$SVG" -o "$OUT/$2"; }
 

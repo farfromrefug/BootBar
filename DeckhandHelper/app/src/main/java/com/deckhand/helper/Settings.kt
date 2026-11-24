@@ -2,9 +2,9 @@ package com.deckhand.helper
 
 import android.content.Context
 
-/** The proxy address BootBar listens on (reached through `adb reverse`), and whether to follow BootBar automatically. */
+/** The proxy address Deckhand listens on (reached through `adb reverse`), and whether to follow Deckhand automatically. */
 class Settings(context: Context) {
-    private val preferences = context.getSharedPreferences("bootbar", Context.MODE_PRIVATE)
+    private val preferences = context.getSharedPreferences("deckhand", Context.MODE_PRIVATE)
 
     var host: String
         get() = preferences.getString("host", "127.0.0.1") ?: "127.0.0.1"
@@ -14,7 +14,7 @@ class Settings(context: Context) {
         get() = preferences.getInt("port", 8899)
         set(value) = preferences.edit().putInt("port", value).apply()
 
-    /** Connect when BootBar is capturing, disconnect when it stops. */
+    /** Connect when Deckhand is capturing, disconnect when it stops. */
     var automatic: Boolean
         get() = preferences.getBoolean("automatic", false)
         set(value) = preferences.edit().putBoolean("automatic", value).apply()

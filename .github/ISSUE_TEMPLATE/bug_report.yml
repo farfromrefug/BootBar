@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem with BootBar
+description: Report a problem with Deckhand
 labels: ["bug", "triage"]
 body:
   - type: textarea
@@ -12,7 +12,7 @@ body:
   - type: input
     id: app-version
     attributes:
-      label: BootBar version
+      label: Deckhand version
     validations:
       required: true
   - type: input

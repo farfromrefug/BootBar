@@ -8,8 +8,8 @@
 
     <application
         android:allowBackup="false" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="BootBar"
-        android:theme="@style/Theme.BootBar">
+        android:label="Deckhand"
+        android:theme="@style/Theme.Deckhand">
 
         <activity
             android:name=".MainActivity"
@@ -27,7 +27,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Watches for the BootBar proxy on the computer and connects the VPN to it" />
+                android:value="Watches for the Deckhand proxy on the computer and connects the VPN to it" />
         </service>
 
         <service
