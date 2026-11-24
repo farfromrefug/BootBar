@@ -2,10 +2,6 @@ import AppKit
 import BootBarCore
 import SwiftUI
 
-enum LogPanelMode: String {
-    case hidden, split, full
-}
-
 /// The device log: search, level and app filters, and a live list that follows the tail.
 struct LogPanelView: View {
     let device: Device
@@ -15,7 +11,6 @@ struct LogPanelView: View {
     let onClose: () -> Void
 
     @AppStorage("logColumnLayout") private var layoutJSON = ""
-    @State private var showApps = false
     /// Following the newest line. Scrolling up with the trackpad or wheel turns it off, reaching the end turns it on.
     @State private var isAtBottom = true
     @State private var endIsVisible = true
@@ -33,7 +28,7 @@ struct LogPanelView: View {
             Divider()
             filterBar(filter: $model.filter)
             Divider()
-            columnHeader
+            PanelColumnHeader(layout: Binding(get: { layout }, set: { layout = $0 }), showsTimeFormat: true)
             Divider()
             content
         }
@@ -87,9 +82,7 @@ struct LogPanelView: View {
 
     private func headerButton(_ symbol: String, _ help: String, tint: Color = .secondary,
                               action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).foregroundStyle(tint) }
-            .buttonStyle(.plain)
-            .help(help)
+        PanelHeaderButton(symbol: symbol, help: help, tint: tint, action: action)
     }
 
     // MARK: Filters
@@ -146,33 +139,10 @@ struct LogPanelView: View {
     }
 
     private func appsMenu(filter: Binding<LogFilter>) -> some View {
-        HStack(spacing: 6) {
-            Button {
-                Task { await model.filterToCurrentApp() }
-            } label: {
-                if model.isFindingApp {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    Image(systemName: "scope")
-                }
-            }
-            .buttonStyle(.plain)
-            .help("Show only the app in the foreground")
-
-            Button { showApps.toggle() } label: {
-                let apps = filter.wrappedValue.apps
-                HStack(spacing: 3) {
-                    Text(apps.isEmpty ? "All apps" : apps.count == 1 ? apps.first! : "\(apps.count) apps")
-                        .lineLimit(1)
-                        .frame(maxWidth: 140)
-                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
-                }
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: $showApps, arrowEdge: .bottom) {
-                AppFilterPopover(model: model)
-            }
-        }
+        AppFilterButton(selection: filter.apps, apps: model.apps, yourApps: model.yourApps,
+                        isFindingApp: model.isFindingApp, message: model.discoveryMessage,
+                        onCurrentApp: { Task { await model.filterToCurrentApp() } },
+                        loadYourApps: { await model.loadYourApps() })
     }
 
     // MARK: Columns
@@ -180,79 +150,6 @@ struct LogPanelView: View {
     private var layout: LogColumnLayout {
         get { LogColumnLayout(json: layoutJSON) ?? LogColumnLayout() }
         nonmutating set { layoutJSON = newValue.json }
-    }
-
-    private var columnHeader: some View {
-        let layout = layout
-        return HStack(spacing: 6) {
-            ForEach(layout.visible, id: \.self) { column in
-                headerCell(column, layout: layout)
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .font(.system(size: 10, weight: .semibold))
-        .foregroundStyle(.secondary)
-        .background(.quaternary.opacity(0.5))
-        .contextMenu {
-            ForEach(LogColumn.allCases.filter { $0 != .message }, id: \.self) { column in
-                Toggle(column.title, isOn: Binding(
-                    get: { !layout.hidden.contains(column) },
-                    set: { value in
-                        var updated = layout
-                        updated.setVisible(column, value)
-                        self.layout = updated
-                    }))
-            }
-            Divider()
-            Picker("Time format", selection: Binding(
-                get: { layout.timeFormat },
-                set: { value in
-                    var updated = layout
-                    updated.timeFormat = value
-                    self.layout = updated
-                })) {
-                ForEach(LogTimeFormat.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            Divider()
-            Button("Reset Columns") { self.layout = LogColumnLayout() }
-        }
-    }
-
-    @ViewBuilder
-    private func headerCell(_ column: LogColumn, layout: LogColumnLayout) -> some View {
-        let isMessage = column == .message
-        HStack(spacing: 0) {
-            Text(column.headerTitle)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if !isMessage {
-                ColumnResizeHandle(width: layout.width(of: column)) { width in
-                    var updated = layout
-                    updated.resize(column, to: width)
-                    self.layout = updated
-                }
-            }
-        }
-        .frame(width: isMessage ? nil : layout.width(of: column))
-        .frame(maxWidth: isMessage ? .infinity : nil, alignment: .leading)
-        .draggable(column.rawValue)
-        .dropDestination(for: String.self) { items, _ in
-            guard let raw = items.first, let dragged = LogColumn(rawValue: raw) else { return false }
-            var updated = layout
-            updated.move(dragged, to: column)
-            self.layout = updated
-            return true
-        }
-        .contextMenu {
-            if !isMessage {
-                Button("Hide \(column.title)") {
-                    var updated = layout
-                    updated.setVisible(column, false)
-                    self.layout = updated
-                }
-            }
-        }
     }
 
     // MARK: List
@@ -447,137 +344,5 @@ private struct LogRow: View {
         case .warning: .orange
         case .error, .fault: .red
         }
-    }
-}
-
-/// Drag the right edge of a column header to resize that column.
-private struct ColumnResizeHandle: View {
-    let width: Double
-    let onResize: (Double) -> Void
-    @State private var startWidth: Double?
-
-    var body: some View {
-        Rectangle()
-            .fill(Color.secondary.opacity(0.35))
-            .frame(width: 1, height: 12)
-            .padding(.horizontal, 3)
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        let start = startWidth ?? width
-                        startWidth = start
-                        onResize(start + value.translation.width)
-                    }
-                    .onEnded { _ in startWidth = nil })
-    }
-}
-
-/// Pick the apps to show: the foreground app on top, then your apps, then everything seen in the log.
-/// The list is alphabetical and bounded, so it does not jump around while lines stream in.
-private struct AppFilterPopover: View {
-    let model: LogViewModel
-    @State private var search = ""
-
-    var body: some View {
-        @Bindable var model = model
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Button {
-                    Task { await model.filterToCurrentApp() }
-                } label: {
-                    Label("Current app", systemImage: "scope")
-                }
-                .controlSize(.small)
-                .disabled(model.isFindingApp)
-                if model.isFindingApp { ProgressView().controlSize(.mini) }
-                Spacer()
-                Button("All apps") { model.filter.apps = [] }
-                    .controlSize(.small)
-                    .disabled(model.filter.apps.isEmpty)
-            }
-            if let message = model.discoveryMessage {
-                Text(message).font(.system(size: 10)).foregroundStyle(.orange)
-            }
-            TextField("Find an app", text: $search)
-                .textFieldStyle(.roundedBorder)
-                .controlSize(.small)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    if !yours.isEmpty {
-                        sectionTitle("Your apps")
-                        ForEach(yours, id: \.self) { row($0, count: nil) }
-                    }
-                    sectionTitle("Seen in the log")
-                    ForEach(seen, id: \.name) { row($0.name, count: $0.count) }
-                }
-            }
-            .frame(height: 300)
-        }
-        .padding(12)
-        .frame(width: 320)
-        .task { await model.loadYourApps() }
-    }
-
-    private var yours: [String] {
-        model.yourApps.filter { matches($0) }
-    }
-
-    private var seen: [LogViewModel.AppCount] {
-        model.apps.filter { matches($0.name) }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    private func matches(_ name: String) -> Bool {
-        search.isEmpty || name.localizedCaseInsensitiveContains(search)
-    }
-
-    private func sectionTitle(_ title: String) -> some View {
-        Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).padding(.top, 4)
-    }
-
-    private func row(_ name: String, count: Int?) -> some View {
-        Toggle(isOn: Binding(
-            get: { model.filter.apps.contains(name) },
-            set: { on in
-                if on { model.filter.apps.insert(name) } else { model.filter.apps.remove(name) }
-            })) {
-            HStack {
-                Text(name).lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 4)
-                if let count { Text("\(count)").foregroundStyle(.tertiary).font(.system(size: 10)) }
-            }
-        }
-        .toggleStyle(.checkbox)
-        .font(.system(size: 11))
-    }
-}
-
-/// A thin bar between the tools and the log that resizes the log when dragged.
-struct LogResizeHandle: View {
-    @Binding var height: Double
-    let available: Double
-    @State private var startHeight: Double?
-
-    var body: some View {
-        ZStack {
-            Divider()
-            Capsule().fill(.tertiary).frame(width: 36, height: 3)
-        }
-        .frame(height: 9)
-        .contentShape(Rectangle())
-        .onHover { inside in
-            if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
-        }
-        .gesture(
-            DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                .onChanged { value in
-                    let start = startHeight ?? height
-                    startHeight = start
-                    height = min(max(start - value.translation.height, 120), max(available - 160, 120))
-                }
-                .onEnded { _ in startHeight = nil })
     }
 }

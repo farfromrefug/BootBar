@@ -11,11 +11,7 @@ public final class LogViewModel {
         case failed(String)
     }
 
-    public struct AppCount: Identifiable, Equatable, Sendable {
-        public let name: String
-        public let count: Int
-        public var id: String { name }
-    }
+    public typealias AppCount = BootBarCore.AppCount
 
     public private(set) var visible: [LogEntry] = []
     public private(set) var totalCount = 0

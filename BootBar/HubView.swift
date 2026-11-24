@@ -10,7 +10,7 @@ struct HubView: View {
     @Environment(InstallRequestCenter.self) private var installs
     @AppStorage("hubShowsMirror") private var showMirror = true
     @AppStorage("hubShowsInspector") private var showInspector = true
-    @AppStorage("hubLogMode") private var logModeRaw = LogPanelMode.hidden.rawValue
+    @AppStorage("hubLogMode") private var logModeRaw = PanelMode.hidden.rawValue
     @AppStorage("hubLogHeight") private var logHeight = 280.0
     @AppStorage(Preferences.logBufferKey) private var logBuffer = 50_000
     @State private var logs = LogViewModel(defaults: .standard) { Preferences.locateSDK() }
@@ -178,11 +178,11 @@ struct HubView: View {
                             }
                             if logMode != .hidden {
                                 if logMode == .split {
-                                    LogResizeHandle(height: $logHeight, available: geometry.size.height)
+                                    PanelResizeHandle(height: $logHeight, available: geometry.size.height)
                                 }
                                 LogPanelView(device: device, model: logs, isFull: logMode == .full,
-                                             onToggleFull: { logModeRaw = (logMode == .full ? LogPanelMode.split : .full).rawValue },
-                                             onClose: { logModeRaw = LogPanelMode.hidden.rawValue })
+                                             onToggleFull: { logModeRaw = (logMode == .full ? PanelMode.split : .full).rawValue },
+                                             onClose: { logModeRaw = PanelMode.hidden.rawValue })
                                     .frame(height: logMode == .split ? min(logHeight, max(geometry.size.height - 160, 120)) : nil)
                                     .frame(maxHeight: logMode == .full ? .infinity : nil)
                             }
@@ -253,7 +253,7 @@ struct HubView: View {
         }
     }
 
-    private var logMode: LogPanelMode { LogPanelMode(rawValue: logModeRaw) ?? .hidden }
+    private var logMode: PanelMode { PanelMode(rawValue: logModeRaw) ?? .hidden }
 
     private struct LogKey: Equatable {
         let deviceId: String
@@ -264,9 +264,9 @@ struct HubView: View {
     private func toggleLogs(_ on: Bool) {
         if on {
             showInspector = true
-            logModeRaw = (logMode == .hidden ? LogPanelMode.split : logMode).rawValue
+            logModeRaw = (logMode == .hidden ? PanelMode.split : logMode).rawValue
         } else {
-            logModeRaw = LogPanelMode.hidden.rawValue
+            logModeRaw = PanelMode.hidden.rawValue
         }
     }
 
