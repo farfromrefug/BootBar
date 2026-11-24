@@ -28,6 +28,11 @@ final class InstallRequestCenter {
         pending = request
         openCount += 1
     }
+
+    /// `bootbar://hub` just opens the window.
+    func showWindow() {
+        openCount += 1
+    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -38,6 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
+            if url.scheme == "bootbar", url.host == "hub" {
+                Task { @MainActor in InstallRequestCenter.shared.showWindow() }
+                continue
+            }
             guard let request = InstallLink.parse(url) else { continue }
             Task { @MainActor in InstallRequestCenter.shared.receive(request) }
         }

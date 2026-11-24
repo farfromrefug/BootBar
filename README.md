@@ -125,7 +125,7 @@ Shown in their own section (Settings → Physical devices turns it off). Android
 
 ### Install links
 
-`expo-orbit:///download?url=https://…` and `bootbar://install?url=https://…` open the window with a confirmation sheet listing the running devices that can take the build (`.apk`, `.apks` or `.aab` for Android, `.tar.gz` for simulators, `.ipa` for iPhones). Nothing is downloaded until you press **Download & Install**. Expo Orbit registers the same `expo-orbit` scheme; choose who gets the links in Settings → Install links.
+`expo-orbit:///download?url=https://…` and `bootbar://install?url=https://…` open the window with a confirmation sheet listing the running devices that can take the build (`.apk`, `.apks` or `.aab` for Android, `.tar.gz` for simulators, `.ipa` for iPhones). Nothing is downloaded until you press **Download & Install**. `bootbar://hub` just opens the window. Expo Orbit registers the same `expo-orbit` scheme; choose who gets the links in Settings → Install links.
 
 ### Android hardware options
 
